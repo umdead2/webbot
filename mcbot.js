@@ -10,10 +10,10 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/web/main.html')
 })
 
-let bot = null
-let spawnTimer = null
+let bot
+let spawnTimer
 
-// GLOBAL CRASH GUARD
+// Crash guard
 process.on('uncaughtException', (err) => {
   if (err.message && err.message.includes('slot >= 0')) {
     console.log('[GUARD] Prevented inventory crash')
@@ -22,12 +22,12 @@ process.on('uncaughtException', (err) => {
   console.error(err)
 })
 
+// Disable inventory BEFORE Mineflayer loads it
 function disableInventory(bot) {
 
   const client = bot._client
 
-  // Block all inventory packets
-  const blocked = [
+  const blockedPackets = [
     'set_slot',
     'window_items',
     'open_window',
@@ -39,25 +39,12 @@ function disableInventory(bot) {
 
   client.emit = function (event, packet) {
 
-    if (blocked.includes(event)) {
-      console.log('[STABILITY] Blocked inventory packet:', event)
+    if (blockedPackets.includes(event)) {
+      console.log('[STABILITY] Blocked packet:', event)
       return
     }
 
     return originalEmit.apply(this, arguments)
-  }
-
-  // Block inventory clicks
-  const originalWrite = client.write
-
-  client.write = function (name, params) {
-
-    if (name === 'window_click') {
-      console.log('[STABILITY] Prevented window_click')
-      return
-    }
-
-    return originalWrite.apply(this, arguments)
   }
 
 }
@@ -74,17 +61,22 @@ io.on('connection', (socket) => {
       version: '1.20.1',
       physicsEnabled: false,
       hideErrors: true,
-      checkTimeoutInterval: 60000
+      checkTimeoutInterval: 60000,
+      loadInternalPlugins: false // VERY IMPORTANT
     })
 
-    // DISABLE INVENTORY SYSTEM
+    // load only safe plugins
+    bot.loadPlugin(require('mineflayer/lib/plugins/chat'))
+    bot.loadPlugin(require('mineflayer/lib/plugins/entities'))
+    bot.loadPlugin(require('mineflayer/lib/plugins/physics'))
+
     disableInventory(bot)
 
     bot.once('login', () => {
 
-      console.log('[+] Connected')
+      console.log('[+] Logged in')
 
-      socket.emit('bot_status', 'Proxy Connected')
+      socket.emit('bot_status', 'Connected')
 
       spawnTimer = setTimeout(() => {
 
@@ -94,17 +86,14 @@ io.on('connection', (socket) => {
 
         setTimeout(() => {
 
+          // enable physics AFTER login
           bot.physics.enabled = true
-
-          // small movement so server loads entities
-          bot.setControlState('jump', true)
-          setTimeout(() => bot.setControlState('jump', false), 400)
 
           socket.emit('bot_status', 'Active & Stable')
 
-          console.log('[✔] Bot running')
+          console.log('[✔] Physics enabled')
 
-        }, 5000)
+        }, 4000)
 
       }, 5000)
 
@@ -133,7 +122,7 @@ io.on('connection', (socket) => {
     })
 
     bot.on('end', () => {
-      console.log('[-] Connection closed')
+      console.log('[-] Disconnected')
       socket.emit('bot_status', 'Disconnected')
     })
 
