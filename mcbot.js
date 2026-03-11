@@ -29,11 +29,23 @@ io.on('connection', (socket) => {
         disableWindowClick: true,
         checkTimeoutInterval: 60000
       })
-
-      // 1. SILENCE PHYSICS IMMEDIATELY
       bot.on('inject_allowed', () => {
         bot.physics.enabled = false 
-      })
+        bot._client.on('window_items', (packet) => {
+          if (packet.items) {
+            // Filter out any items that have a negative or invalid slot index
+            packet.items = packet.items.filter(item => item.slot >= 0);
+          }
+        });
+        
+        bot._client.on('set_slot', (packet) => {
+          if (packet.slot < 0) {
+            // Drop the packet if the slot is negative
+            packet.slot = 0; 
+            console.log('[STABILITY] Blocked negative set_slot crash.');
+          }
+        });
+      });
 
       // 2. LOG ALL CHAT (To see if it says "Register" or "Banned")
       bot.on('messagestr', (message) => {
@@ -46,12 +58,7 @@ io.on('connection', (socket) => {
         bot.acceptResourcePack()
       })
 
-      bot.on('error', (err) => {
-        console.log(`[STABILITY GUARD] Caught: ${err.message}`);
-        // If it's the assertion error, we just keep the bot alive
-        if (err.name === 'AssertionError') return; 
-      });
-
+      
       bot.once('login', () => {
         if (spawnTimer) clearTimeout(spawnTimer);
         
