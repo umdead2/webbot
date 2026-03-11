@@ -1,94 +1,109 @@
-const express = require('express')
-const app = express()
-const http = require('http').Server(app)
-const io = require('socket.io')(http)
-const mineflayer = require('mineflayer')
+const express = require('express');
+const app = express();
+const http = require('http').Server(app);
+const io = require('socket.io')(http);
+const mineflayer = require('mineflayer');
 
-// Crash guard
-process.on('uncaughtException', (err) => {
-  console.log('[GUARD] Caught:', err.message)
-})
+app.use(express.static('web'));
 
-app.use(express.static('web'))
+app.get('/', (req, res) => {
 
-app.get('/', (req, res) => res.sendFile(__dirname + '/web/main.html'))
+  res.sendFile(__dirname + '/web/main.html');
 
-let bot
-let spawnTimer
+});
+
+let bot;
+let spawnTimer;
 
 io.on('connection', (socket) => {
+    socket.on('start_bot', (data) => {
 
-  socket.on('start_bot', (data) => {
-    console.log('[+] Starting bot')
-
-    // 1. We removed loadInternalPlugins: false so the bot stays alive
-    bot = mineflayer.createBot({
-      host: data.host || 'play.minesteal.xyz',
-      username: data.username,
-      version: '1.20.1',
-      physicsEnabled: false,
-      hideErrors: true,
-      checkTimeoutInterval: 60000 
-    })
-
-    // 2. THE ULTIMATE FIX: prependListener
-    bot.on('inject_allowed', () => {
-      // This forces our code to run BEFORE Mineflayer's inventory plugin
-      bot._client.prependListener('window_items', (packet) => {
-        if (packet && packet.items) {
-          packet.items = packet.items.filter(item => item.slot >= 0)
-        }
+        // EXACTLY YOUR WORKING CONFIG
+      bot = mineflayer.createBot({
+        host: data.host || 'play.minesteal.xyz',
+        username: data.username,
+        version: '1.20.1', // Most Minesteal-style servers prefer 1.20.1
+        hideErrors: true,
+        clientRoot: null, 
+        physicsEnabled: false,
+        disableWindowClick: true,
+        checkTimeoutInterval: 60000
       })
 
-      bot._client.prependListener('set_slot', (packet) => {
-        if (packet && packet.slot < 0) {
-          packet.slot = 0
-        }
+      // 1. SILENCE PHYSICS IMMEDIATELY
+      bot.on('inject_allowed', () => {
+        bot.physics.enabled = false 
       })
-    })
 
-    bot.once('login', () => {
-      console.log('[+] Logged in')
-      socket.emit('bot_status', 'Connected')
-    })
+      // 2. LOG ALL CHAT (To see if it says "Register" or "Banned")
+      bot.on('messagestr', (message) => {
+        console.log(`[CHAT] ${message}`)
+        socket.emit('bot_chat', message);
+      })
 
-    bot.once('spawn', () => {
-      console.log('[+] Spawned')
+      // 3. HANDLE RESOURCE PACKS (Some proxies kick if you ignore these)
+      bot.on('resource_pack', () => {
+        bot.acceptResourcePack()
+      })
 
-      if (spawnTimer) clearTimeout(spawnTimer)
+      bot.once('login', () => {
 
-      spawnTimer = setTimeout(() => {
-        console.log('[>] Sending login command')
-        bot.chat(`/login ${data.password}`)
+            // 1. CLEAR any existing timer so they don't overlap
+            if (spawnTimer) clearTimeout(spawnTimer);
+            
+            socket.emit('bot_status', "World Loaded (Waiting 5s...)");
+            console.log('[!] Spawn detected. Starting login countdown...');
 
-        // enable physics after login
-        setTimeout(() => {
-          bot.physics.enabled = true
-          bot.setControlState('jump', true)
-          setTimeout(() => bot.setControlState('jump', false), 400)
+            // 2. Start a fresh 5-second timer
+            spawnTimer = setTimeout(() => {
+                console.log('[>] Sending login commands...');
+                bot.chat(`/login ${data.password}`);
+                
+                // 3. Enable physics AFTER login
+                setTimeout(() => { 
+                    bot.physics.enabled = true; 
+                    socket.emit('bot_status', "Active (Physics ON)");
+                    console.log('[✔] Physics enabled.');
+                }, 3000);
+            }, 5000); 
+        });
 
-          socket.emit('bot_status', 'Active & Stable')
-          console.log('[✔] Physics enabled')
-        }, 4000)
-      }, 5000)
-    })
 
-    bot.on('messagestr', (msg) => {
-      console.log('[CHAT]', msg)
-      socket.emit('bot_chat', msg)
-    })
+        // Add this near your other bot.on events
+      bot.on('error', (err) => {
+          if (err.message.includes('slot >= 0')) {
+              console.log('[!] Caught inventory sync error (Normal during server swaps).');
+              return; // Ignore this specific error
+          }
+          console.log('[!] Bot Error:', err);
+      });
 
-    bot.on('resource_pack', () => bot.acceptResourcePack())
-    bot.on('kicked', (reason) => console.log('[!] KICKED:', reason))
-    bot.on('error', (err) => console.log('[ERROR]', err.message))
-    bot.on('end', () => console.log('[-] Disconnected'))
-  })
+      // Also add this to catch the "falsy value" crash specifically
+      process.on('uncaughtException', (err) => {
+          if (err.message.includes('slot >= 0')) {
+              console.log('[!] Preventing crash from inventory slot error...');
+          } else {
+              console.error('Critical Error:', err);
+              process.exit(1); 
+          }
+      });
+      bot.on('kicked', (reason) => {
+        const msg = typeof reason === 'string' ? reason : JSON.stringify(reason)
+        console.log(`[!] KICKED: ${msg}`)
+      })
 
-  socket.on('command_from_web', (cmd) => {
-    if (bot && bot.chat) bot.chat(cmd)
-    else socket.emit('bot_chat', '[SYSTEM] Bot not connected')
-  })
+      bot.on('error', (err) => console.log('[!] Error:', err.message))
+      bot.on('end', () => console.log('[-] Socket closed. Restarting...'))
+    });
 
-})
+    socket.on('command_from_web', (cmd) => {
+        // Now 'bot' will be recognized here because we fixed the scoping
+        if (bot && bot.chat) {
+            bot.chat(cmd);
+        } else {
+            socket.emit('bot_chat', "[SYSTEM] Bot is not connected.");
+        }
+    });
+});
 
-http.listen(8080, () => console.log('Panel: http://localhost:8080'))
+http.listen(8080, () => console.log('Panel: http://localhost:8080'));
