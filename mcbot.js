@@ -1,133 +1,159 @@
-const express = require('express');
-const app = express();
-const http = require('http').Server(app);
-const io = require('socket.io')(http);
-const mineflayer = require('mineflayer');
+const express = require('express')
+const app = express()
+const http = require('http').Server(app)
+const io = require('socket.io')(http)
+const mineflayer = require('mineflayer')
 
-app.use(express.static('web'));
+app.use(express.static('web'))
 
 app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/web/main.html')
+})
 
-  res.sendFile(__dirname + '/web/main.html');
+let bot = null
+let spawnTimer = null
 
-});
-
-let bot;
-let spawnTimer;
+// GLOBAL CRASH GUARD (must be outside everything)
+process.on('uncaughtException', (err) => {
+  if (err.message && err.message.includes('slot >= 0')) {
+    console.log('[STABILITY GUARD] Prevented inventory slot crash')
+  } else {
+    console.error('[CRITICAL]', err)
+  }
+})
 
 io.on('connection', (socket) => {
-    socket.on('start_bot', (data) => {
 
-        // EXACTLY YOUR WORKING CONFIG
-      bot = mineflayer.createBot({
-        host: data.host || 'play.minesteal.xyz',
-        username: data.username,
-        version: '1.20.1', // Most Minesteal-style servers prefer 1.20.1
-        hideErrors: true,
-        clientRoot: null, 
-        physicsEnabled: false,
-        disableWindowClick: true,
-        checkTimeoutInterval: 60000
-      })
-      bot.on('inject_allowed', () => {
-        bot.physics.enabled = false;
-        
-        // Intercept and completely drop problematic packets
-        const originalWrite = bot._client.write;
-        bot._client.write = function(name, params) {
-          if (name === 'window_click' && params && params.slot < 0) {
-            console.log('[STABILITY] Blocked negative window_click.');
-            return; // Drop the packet entirely
-          }
-          return originalWrite.apply(this, arguments);
-        };
-        
-        // Override the emit function to filter packets before they reach handlers
-        const originalEmit = bot._client.emit;
-        bot._client.emit = function(event, packet) {
-          if (event === 'set_slot' && packet && packet.slot < 0) {
-            console.log('[STABILITY] Blocked negative set_slot crash.');
-            return; // Don't emit this event at all
-          }
-          if (event === 'window_items' && packet && packet.items) {
-            packet.items = packet.items.filter(item => item && item.slot >= 0);
-          }
-          return originalEmit.apply(this, arguments);
-        };
-        
-        // Also patch the inventory directly to prevent any edge cases
-        if (bot.inventory) {
-          const originalUpdateSlot = bot.inventory.updateSlot;
-          bot.inventory.updateSlot = function(slot, item) {
-            if (slot < 0) {
-              console.log('[STABILITY] Prevented negative slot update.');
-              return;
-            }
-            return originalUpdateSlot.call(this, slot, item);
-          };
-        }
-      });
+  socket.on('start_bot', (data) => {
 
-      // 2. LOG ALL CHAT (To see if it says "Register" or "Banned")
-      bot.on('messagestr', (message) => {
-        console.log(`[CHAT] ${message}`)
-        socket.emit('bot_chat', message);
-      })
+    console.log('[+] Starting bot...')
 
-      // 3. HANDLE RESOURCE PACKS (Some proxies kick if you ignore these)
-      bot.on('resource_pack', () => {
-        bot.acceptResourcePack()
-      })
+    bot = mineflayer.createBot({
+      host: data.host || 'play.minesteal.xyz',
+      username: data.username,
+      version: '1.20.1',
+      hideErrors: true,
+      physicsEnabled: false,
+      disableWindowClick: true,
+      checkTimeoutInterval: 60000
+    })
 
-      
-      bot.once('login', () => {
-        if (spawnTimer) clearTimeout(spawnTimer);
-        
-        socket.emit('bot_status', "Proxy Connected. Handshaking...");
-        
-        spawnTimer = setTimeout(() => {
-            console.log('[>] Sending login...');
-            bot.chat(`/login ${data.password}`);
-            
-            // WAIT an extra 5 seconds before turning on Physics
-            // This is the most important part for preventing the crash
-            setTimeout(() => { 
-                bot.physics.enabled = true; 
-                bot.setControlState('jump', true); // Tiny hop to "wake up" the bot
-                setTimeout(() => bot.setControlState('jump', false), 500);
-                
-                socket.emit('bot_status', "Active & Stable");
-                console.log('[✔] Physics/Entity sync complete.');
-            }, 5000); 
-        }, 5000); 
-      });
+    // ========= PACKET STABILITY PATCH =========
+    const client = bot._client
 
-      // Also add this to catch the "falsy value" crash specifically
-      process.on('uncaughtException', (err) => {
-          if (err.message.includes('slot >= 0')) {
-              console.log('[!] Preventing crash from inventory slot error...');
-          } else {
-              console.error('Critical Error:', err);
-              process.exit(1); 
-          }
-      });
-      bot.on('kicked', (reason) => {
-        const msg = typeof reason === 'string' ? reason : JSON.stringify(reason)
-        console.log(`[!] KICKED: ${msg}`)
-      })
+    const originalEmit = client.emit
+    client.emit = function (event, packet) {
 
-      bot.on('error', (err) => console.log('[!] Error:', err.message))
-      bot.on('end', () => console.log('[-] Socket closed. Restarting...'))
-    });
+      // Block invalid inventory slot packets
+      if (event === 'set_slot' && packet && packet.slot < 0) {
+        console.log('[STABILITY] Blocked invalid set_slot packet')
+        return
+      }
 
-    socket.on('command_from_web', (cmd) => {
-        // Now 'bot' will be recognized here because we fixed the scoping
-        if (bot && bot.chat) {
-            bot.chat(cmd);
-        } else {
-            socket.emit('bot_chat', "[SYSTEM] Bot is not connected.");
-        }
-    });
-});
+      if (event === 'window_items' && packet && packet.items) {
+        packet.items = packet.items.filter(i => i && i.slot >= 0)
+      }
 
-http.listen(8080, () => console.log('Panel: http://localhost:8080'));
+      return originalEmit.apply(this, arguments)
+    }
+
+    const originalWrite = client.write
+    client.write = function (name, params) {
+
+      if (name === 'window_click' && params && params.slot < 0) {
+        console.log('[STABILITY] Blocked invalid window_click')
+        return
+      }
+
+      return originalWrite.apply(this, arguments)
+    }
+
+    // ========= LOGIN =========
+    bot.once('login', () => {
+
+      console.log('[+] Logged in')
+
+      if (spawnTimer) clearTimeout(spawnTimer)
+
+      socket.emit('bot_status', 'Proxy Connected. Handshaking...')
+
+      spawnTimer = setTimeout(() => {
+
+        console.log('[>] Sending login command')
+
+        bot.chat(`/login ${data.password}`)
+
+        setTimeout(() => {
+
+          bot.physics.enabled = true
+
+          bot.setControlState('jump', true)
+          setTimeout(() => bot.setControlState('jump', false), 500)
+
+          socket.emit('bot_status', 'Active & Stable')
+
+          console.log('[✔] Physics/Entity sync complete')
+
+        }, 5000)
+
+      }, 5000)
+
+    })
+
+    // ========= CHAT =========
+    bot.on('messagestr', (msg) => {
+      console.log('[CHAT]', msg)
+      socket.emit('bot_chat', msg)
+    })
+
+    // ========= RESOURCE PACK =========
+    bot.on('resource_pack', () => {
+      bot.acceptResourcePack()
+    })
+
+    // ========= PREVENT WINDOW BUGS =========
+    bot.on('windowOpen', () => {
+      if (bot.currentWindow) {
+        bot.closeWindow(bot.currentWindow)
+      }
+    })
+
+    // ========= KICK =========
+    bot.on('kicked', (reason) => {
+      const msg = typeof reason === 'string'
+        ? reason
+        : JSON.stringify(reason)
+
+      console.log('[!] KICKED:', msg)
+      socket.emit('bot_chat', `[KICKED] ${msg}`)
+    })
+
+    // ========= ERROR =========
+    bot.on('error', (err) => {
+      console.log('[!] Error:', err.message)
+    })
+
+    // ========= END =========
+    bot.on('end', () => {
+      console.log('[-] Connection closed')
+      socket.emit('bot_status', 'Disconnected')
+    })
+
+  })
+
+  // ========= COMMANDS FROM WEB =========
+  socket.on('command_from_web', (cmd) => {
+
+    if (bot && bot.chat) {
+      bot.chat(cmd)
+    } else {
+      socket.emit('bot_chat', '[SYSTEM] Bot not connected')
+    }
+
+  })
+
+})
+
+http.listen(8080, () => {
+  console.log('Panel: http://localhost:8080')
+})
