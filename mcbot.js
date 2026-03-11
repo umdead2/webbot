@@ -10,38 +10,36 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/web/main.html')
 })
 
-let bot
-let spawnTimer
+let bot = null
+let spawnTimer = null
 
-// Crash guard
+// Prevent inventory crash
 process.on('uncaughtException', (err) => {
   if (err.message && err.message.includes('slot >= 0')) {
     console.log('[GUARD] Prevented inventory crash')
     return
   }
-  console.error(err)
+  console.error('[CRITICAL]', err)
 })
 
-// Disable inventory BEFORE Mineflayer loads it
-function disableInventory(bot) {
+function patchPackets(bot) {
 
   const client = bot._client
 
-  const blockedPackets = [
+  const blocked = [
     'set_slot',
-    'window_items',
-    'open_window',
-    'close_window',
-    'window_property'
+    'window_items'
   ]
 
   const originalEmit = client.emit
 
   client.emit = function (event, packet) {
 
-    if (blockedPackets.includes(event)) {
-      console.log('[STABILITY] Blocked packet:', event)
-      return
+    if (blocked.includes(event)) {
+      if (packet && packet.slot !== undefined && packet.slot < 0) {
+        console.log('[STABILITY] Blocked bad slot packet')
+        return
+      }
     }
 
     return originalEmit.apply(this, arguments)
@@ -61,26 +59,26 @@ io.on('connection', (socket) => {
       version: '1.20.1',
       physicsEnabled: false,
       hideErrors: true,
-      checkTimeoutInterval: 60000,
-      loadInternalPlugins: false // VERY IMPORTANT
+      checkTimeoutInterval: 60000
     })
 
-    // load only safe plugins
-    bot.loadPlugin(require('mineflayer/lib/plugins/chat'))
-    bot.loadPlugin(require('mineflayer/lib/plugins/entities'))
-    bot.loadPlugin(require('mineflayer/lib/plugins/physics'))
-
-    disableInventory(bot)
+    // patch packets immediately
+    patchPackets(bot)
 
     bot.once('login', () => {
-
       console.log('[+] Logged in')
-
       socket.emit('bot_status', 'Connected')
+    })
+
+    bot.once('spawn', () => {
+
+      console.log('[+] Spawned')
+
+      if (spawnTimer) clearTimeout(spawnTimer)
 
       spawnTimer = setTimeout(() => {
 
-        console.log('[>] Sending login')
+        console.log('[>] Sending login command')
 
         bot.chat(`/login ${data.password}`)
 
@@ -108,13 +106,16 @@ io.on('connection', (socket) => {
       bot.acceptResourcePack()
     })
 
+    bot.on('windowOpen', () => {
+      if (bot.currentWindow) bot.closeWindow(bot.currentWindow)
+    })
+
     bot.on('kicked', (reason) => {
       const msg = typeof reason === 'string'
         ? reason
         : JSON.stringify(reason)
 
       console.log('[!] KICKED:', msg)
-      socket.emit('bot_chat', '[KICKED] ' + msg)
     })
 
     bot.on('error', (err) => {
