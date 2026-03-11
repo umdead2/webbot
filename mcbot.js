@@ -3,7 +3,21 @@ const app = express()
 const http = require('http').Server(app)
 const io = require('socket.io')(http)
 const mineflayer = require('mineflayer')
+const simpleInventory = require('mineflayer/lib/plugins/simple_inventory')
 
+const oldInventory = simpleInventory
+require.cache[require.resolve('mineflayer/lib/plugins/simple_inventory')].exports = function(bot, opts) {
+  oldInventory(bot, opts)
+
+  const oldSetQuickBarSlot = bot.setQuickBarSlot
+  bot.setQuickBarSlot = function(slot) {
+    if (slot < 0) {
+      console.log('[PATCH] Ignored invalid quickbar slot:', slot)
+      return
+    }
+    return oldSetQuickBarSlot.call(this, slot)
+  }
+}
 // Crash guard (optional)
 process.on('uncaughtException', (err) => {
   console.log('[GUARD] Caught:', err.message)
