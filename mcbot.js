@@ -3,22 +3,8 @@ const app = express()
 const http = require('http').Server(app)
 const io = require('socket.io')(http)
 const mineflayer = require('mineflayer')
-const simpleInventory = require('mineflayer/lib/plugins/simple_inventory')
 
-const oldInventory = simpleInventory
-require.cache[require.resolve('mineflayer/lib/plugins/simple_inventory')].exports = function(bot, opts) {
-  oldInventory(bot, opts)
-
-  const oldSetQuickBarSlot = bot.setQuickBarSlot
-  bot.setQuickBarSlot = function(slot) {
-    if (slot < 0) {
-      console.log('[PATCH] Ignored invalid quickbar slot:', slot)
-      return
-    }
-    return oldSetQuickBarSlot.call(this, slot)
-  }
-}
-// Crash guard (optional)
+// Crash guard
 process.on('uncaughtException', (err) => {
   console.log('[GUARD] Caught:', err.message)
 })
@@ -35,22 +21,31 @@ io.on('connection', (socket) => {
   socket.on('start_bot', (data) => {
     console.log('[+] Starting bot')
 
+    // 1. We removed loadInternalPlugins: false so the bot stays alive
     bot = mineflayer.createBot({
       host: data.host || 'play.minesteal.xyz',
       username: data.username,
       version: '1.20.1',
       physicsEnabled: false,
       hideErrors: true,
-      checkTimeoutInterval: 60000,
-      loadInternalPlugins: false // IMPORTANT: prevents inventory plugin from loading
+      checkTimeoutInterval: 60000 
     })
 
-    // Load only safe plugins
-    const loadPlugin = (plugin) => bot.loadPlugin(require(plugin))
-    loadPlugin('mineflayer/lib/plugins/chat')
-    loadPlugin('mineflayer/lib/plugins/physics')
-    loadPlugin('mineflayer/lib/plugins/entities')
-    // NOTE: we never load 'inventory' or 'simple_inventory'
+    // 2. THE ULTIMATE FIX: prependListener
+    bot.on('inject_allowed', () => {
+      // This forces our code to run BEFORE Mineflayer's inventory plugin
+      bot._client.prependListener('window_items', (packet) => {
+        if (packet && packet.items) {
+          packet.items = packet.items.filter(item => item.slot >= 0)
+        }
+      })
+
+      bot._client.prependListener('set_slot', (packet) => {
+        if (packet && packet.slot < 0) {
+          packet.slot = 0
+        }
+      })
+    })
 
     bot.once('login', () => {
       console.log('[+] Logged in')
