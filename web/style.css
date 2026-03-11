@@ -1,6 +1,9 @@
- body {
-    font-family: 'Segoe UI',Tahoma, Geneva, Verdana, sans-serif;
-    background: #121212; color: #e0e0e0; padding: 20px;
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #121212;
+    color: #e0e0e0;
+    padding: 20px;
+    margin: 0;
 }
 
 .container {
@@ -8,7 +11,8 @@
     margin: auto;
 }
 
-.card {
+/* --- 2. Layout & Cards --- */
+.card, .admin, .OnlinePlayers {
     background: #1e1e1e;
     padding: 20px;
     border-radius: 8px;
@@ -16,46 +20,151 @@
     border: 1px solid #333;
     box-shadow: 0 4px 6px rgba(0,0,0,0.3);
 }
+
 .input-group {
     display: flex;
     gap: 10px;
-    margin-bottom:
-    10px; flex-wrap:wrap;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
 }
+
+/* --- 3. Inputs & Selects --- */
 input {
     background: #2d2d2d;
     border: 1px solid #444;
     color: white;
     padding: 10px;
-    border-radius:4px;
-    flex: 1;
-    min-width: 200px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s;
 }
+
+input:focus {
+    border-color: #00ff00;
+}
+
+#commands {
+    background: #1a1a1a;
+    color: #00ff00;
+    border: 1px solid #333;
+    padding: 8px 12px;
+    border-radius: 5px;
+    font-family: monospace;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2300ff00' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+    width: 120px;
+    flex-shrink: 0;
+}
+
+/* --- 4. Buttons --- */
 button {
     padding: 10px 20px;
     border-radius: 4px;
     border: none;
     cursor: pointer;
     font-weight: bold;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, transform 0.1s;
 }
+
+button:active {
+    transform: scale(0.98);
+}
+
 .btn-launch {
     background: #2e7d32;
     color: white;
-    width:49%;
-    margin-top: 10px;
+    flex: 1; /* Takes up exactly half */
 }
+
 .btn-disconnect {
-    background: #2e7d32;
+    background: #c62828; /* Changed to red so it looks like a stop button */
     color: white;
-    width:49%;
-    margin-left: 1%;
-    margin-top: 10px;
+    flex: 1; /* Takes up exactly half */
 }
+
 .btn-send {
     background: #1565c0;
     color: white;
 }
+
+/* --- 5. Player List (Grid) --- */
+#player-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 10px;
+    background: #181818;
+    border: 1px solid #333;
+    border-radius: 4px;
+}
+
+#player-list div {
+    background: #333;
+    color: #00ff00;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    white-space: nowrap;
+    border: 1px solid #444;
+}
+
+/* --- 6. Search & Custom Dropdown --- */
+.search-wrapper {
+    position: relative;
+    width: 250px;
+}
+
+#player-search {
+    width: 100%;
+    padding-left: 35px;
+    box-sizing: border-box;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2300ff00' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 10px center;
+}
+#time {
+    width: 10%;
+}
+
+.custom-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #111;
+    border: 1px solid #00ff00;
+    border-top: none;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 9999;
+    display: none;
+    border-radius: 0 0 5px 5px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+}
+
+.dropdown-item {
+    padding: 10px;
+    color: #e0e0e0;
+    cursor: pointer;
+    font-family: monospace;
+    border-bottom: 1px solid #222;
+}
+
+.dropdown-item:hover {
+    background: #00ff00;
+    color: #000;
+}
+
+/* --- 7. Console & Status --- */
 #console {
     height: 400px;
     overflow-y: auto;
@@ -64,27 +173,111 @@ button {
     padding: 15px;
     font-family: 'Consolas', 'Courier New', monospace;
     border-radius: 4px;
-    border: 1px solid #444;
+    border: 1px solid #333;
     font-size: 14px;
+    line-height: 1.4;
 }
+
 .status-bar {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 10px;
-    font-size: 0.9em;
+    margin-top: 15px;
 }
+
 .status-dot {
     height: 12px;
     width: 12px;
     border-radius: 50%;
-    display: inline-block;
     background: #bbb;
 }
-.online {
-    background: #4caf50;
-    box-shadow: 0 0 8px #4caf50;
+
+.online { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
+.offline { background: #f44336; box-shadow: 0 0 8px #f44336; }
+
+/* --- 8. Custom Scrollbars --- */
+#player-list::-webkit-scrollbar, #console::-webkit-scrollbar, .custom-dropdown::-webkit-scrollbar {
+    width: 6px;
 }
-.offline {
-    background: #f44336;
+
+::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #00ff00;
+}
+.input-group input {
+    flex: 1;
+    min-width: 150px; /* Prevents them from getting too tiny on mobile */
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+/* Admin Card Specific Styling */
+.admin {
+    background: #1e1e1e;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #333;
+}
+
+/* Update the input group for Admin specifically */
+.admin .input-group {
+    display: flex;
+    flex-wrap: wrap; /* Allows wrapping to a second row */
+    gap: 12px;
+    justify-content: center;
+}
+
+/* The Top Row (Dropdown and Search) */
+#commands {
+    flex: 1;
+    min-width: 100px;
+}
+
+.search-wrapper {
+    flex: 2; /* Search gets more space */
+    min-width: 200px;
+    position: relative;
+}
+
+/* The Middle Row (Small details) */
+#time {
+    flex: 1;
+    min-width: 80px;
+}
+
+#offense {
+    flex: 1;
+    min-width: 80px;
+}
+
+#reason {
+    flex: 3; /* Reason gets the most space */
+    min-width: 150px;
+}
+
+/* The Send Button */
+.admin .btn-send {
+    width: 100%; /* Spans the bottom for a clean "Submit" feel */
+    margin-top: 5px;
+    background: #1565c0;
+    font-size: 16px;
+    letter-spacing: 1px;
+}
+
+/* Adjusting heights so they match perfectly */
+.admin input, .admin select {
+    height: 42px; /* Uniform height for all admin inputs */
+    box-sizing: border-box;
 }

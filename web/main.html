@@ -8,21 +8,46 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
+<div class="OnlinePlayers">
+    <h3 style="text-align: center;">Online Players (<span id="player-count">0</span>)</h3>
+    <div id="player-list" style="max-height: 150px;  overflow-x: auto; font-family: monospace;"></div>
+</div>
 <div class="container">
     <div class="card">
-        <h3>Bot Configuration</h3>
+        <h3 style="text-align: center;">Bot Configuration</h3>
+        
         <div class="input-group">
-            <input type="text" id="host" placeholder="Server IP (e.g., play.minesteal.xyz)" value="play.minesteal.xyz">
+            <input type="text" id="host" placeholder="Server IP" value="play.minesteal.xyz">
             <input type="text" id="user" placeholder="Bot Username">
             <input type="password" id="pass" placeholder="Minecraft Password">
         </div>
-        <button class="btn-launch" onclick="launchBot()">LAUNCH BOT</button>
-        <button id="btn-disconnect" class="btn-disconnect">DISCONNECT BOT</button>
-        
+
+        <div class="button-group">
+            <button class="btn-launch" onclick="launchBot()">LAUNCH BOT</button>
+            <button id="btn-disconnect" class="btn-disconnect">DISCONNECT</button>
+        </div>
+
         <div class="status-bar">
             <span id="status-dot" class="status-dot"></span>
             Status: <span id="status-text">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="admin">
+        <h3 style="text-align: center;">Admin Panel </h3>
+        <div class="input-group">
+            <select id="commands">
+                <option value="/ipmute ">/ipmute</option>
+            </select>
+            
+            <div class="search-wrapper">
+                <input type="text" id="player-search" placeholder="Search player..." autocomplete="off">
+                <div id="search-results" class="custom-dropdown"></div>
+            </div>
+            <input type="text" id="time" placeholder="time">
+            <input type="text" id="reason" placeholder="reason">
+            <input type="text" id="offense" placeholder="offense (2nd)">
+            <button class="btn-send" onclick="sendToSelected()">SEND</button>
         </div>
     </div>
 

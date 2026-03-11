@@ -14,8 +14,42 @@ app.get('/', (req, res) => {
 
 let bot;
 let spawnTimer;
+let chatHistory = [];
+
+// Helper to attach listeners
+function setupBotEvents(socket) {
+    if (!bot) return;
+
+bot.removeAllListeners('messagestr');
+    bot.removeAllListeners('error');
+    bot.removeAllListeners('kicked');
+    bot.removeAllListeners('health');
+    chatHistory.forEach(msg => socket.emit('bot_chat', msg));
+    // 2. RE-ATTACH FRESH LISTENERS
+    bot.on('messagestr', (message) => {
+        // Only push to history once, but emit to the current socket
+        socket.emit('bot_chat', message);
+        // Logic to save history (only if not already handled elsewhere)
+        if (!chatHistory.includes(message)) {
+             chatHistory.push(message);
+             if (chatHistory.length > 50) chatHistory.shift();
+        }
+    });
+
+    bot.on('error', (err) => socket.emit('bot_status', 'Error: ' + err.message));
+}
+
 
 io.on('connection', (socket) => {
+    if (bot) {
+        console.log('[Panel] Syncing existing bot state...');
+        socket.emit('bot_status', 'Active (Physics ON)');
+        if (bot.players) {
+            socket.emit('player_list', Object.keys(bot.players));
+        }
+        setupBotEvents(socket); // Re-attach listeners to the new socket
+    }
+
     socket.on('start_bot', (data) => {
 
         // EXACTLY YOUR WORKING CONFIG
@@ -39,35 +73,56 @@ io.on('connection', (socket) => {
       bot.on('messagestr', (message) => {
         console.log(`[CHAT] ${message}`)
         socket.emit('bot_chat', message);
+        if (!chatHistory.includes(message)) {
+             chatHistory.push(message);
+             if (chatHistory.length > 50) chatHistory.shift();
+        }
       })
 
       // 3. HANDLE RESOURCE PACKS (Some proxies kick if you ignore these)
-      bot.on('resource_pack', () => {
+        bot.on('resource_pack', () => {
         bot.acceptResourcePack()
       })
 
       bot.once('login', () => {
 
-            // 1. CLEAR any existing timer so they don't overlap
-            if (spawnTimer) clearTimeout(spawnTimer);
-            
-            socket.emit('bot_status', "World Loaded (Waiting 5s...)");
-            console.log('[!] Spawn detected. Starting login countdown...');
+        // 1. CLEAR any existing timer so they don't overlap
+        if (spawnTimer) clearTimeout(spawnTimer);
+        
+        socket.emit('bot_status', "World Loaded (Waiting 5s...)");
+        console.log('[!] Spawn detected. Starting login countdown...');
 
-            // 2. Start a fresh 5-second timer
-            spawnTimer = setTimeout(() => {
-                console.log('[>] Sending login commands...');
-                bot.chat(`/login ${data.password}`);
-                
-                // 3. Enable physics AFTER login
-                setTimeout(() => { 
-                    bot.physics.enabled = true; 
-                    socket.emit('bot_status', "Active (Physics ON)");
-                    console.log('[✔] Physics enabled.');
-                }, 3000);
-            }, 5000); 
+        // 2. Start a fresh 5-second timer
+        spawnTimer = setTimeout(() => {
+            console.log('[>] Sending login commands...');
+            bot.chat(`/login ${data.password}`);
+            
+            // 3. Enable physics AFTER login
+            setTimeout(() => { 
+                bot.physics.enabled = true; 
+                socket.emit('bot_status', "Active (Physics ON)");
+                console.log('[✔] Physics enabled.');
+            }, 3000);
+        }, 5000); 
         });
 
+
+    const sendPlayerList = () => {
+        if (bot && bot.players) {
+            // Convert the players object into a simple array of usernames
+            const playerNames = Object.keys(bot.players); 
+            socket.emit('player_list', playerNames);
+        }
+    };
+
+    // Update the web panel when players join or leave
+    bot.on('playerJoined', () => sendPlayerList());
+    bot.on('playerLeft', () => sendPlayerList());
+
+    // Also send it once when the bot fully spawns
+    bot.on('spawn', () => {
+        setTimeout(sendPlayerList, 2000); // Wait a bit for the tab list to populate
+    });
 
         // Add this near your other bot.on events
       bot.on('error', (err) => {
@@ -104,6 +159,9 @@ io.on('connection', (socket) => {
             socket.emit('bot_chat', "[SYSTEM] Bot is not connected.");
         }
     });
+    socket.on('debug', (cmd) => {
+        console.log(cmd)
+    });
     socket.on('stop_bot', () => {
         if (bot) {
             console.log('[!] Executing Instant Kill...');
@@ -130,6 +188,7 @@ io.on('connection', (socket) => {
 
             socket.emit('bot_status', 'Disconnected');
             socket.emit('bot_chat', '[SYSTEM] Bot disconnected.');
+            chatHistory = [];
         }
     });
 });
