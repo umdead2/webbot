@@ -19,7 +19,7 @@ io.on('connection', (socket) => {
     socket.on('start_bot', (data) => {
 
         // EXACTLY YOUR WORKING CONFIG
-      bot = mineflayer.createBot({
+        bot = mineflayer.createBot({
         host: data.host || 'play.minesteal.xyz',
         username: data.username,
         version: '1.20.1', // Most Minesteal-style servers prefer 1.20.1
@@ -102,6 +102,34 @@ io.on('connection', (socket) => {
             bot.chat(cmd);
         } else {
             socket.emit('bot_chat', "[SYSTEM] Bot is not connected.");
+        }
+    });
+    socket.on('stop_bot', () => {
+        if (bot) {
+            console.log('[!] Executing Instant Kill...');
+
+            if (spawnTimer) {
+                clearTimeout(spawnTimer);
+                spawnTimer = null;
+            }
+
+            // 1. The protocol-safe way to say "I'm leaving"
+            if (bot._client) {
+                // If the raw socket exists, destroy it to avoid the 20s wait
+                if (bot._client.socket) {
+                    bot._client.socket.destroy(); 
+                } else {
+                    bot._client.end('User disconnect');
+                }
+            }
+
+            // 2. Clear listeners so the 'end' event doesn't trigger a restart
+            bot.removeAllListeners();
+            bot.quit();
+            bot = null;
+
+            socket.emit('bot_status', 'Disconnected');
+            socket.emit('bot_chat', '[SYSTEM] Bot disconnected.');
         }
     });
 });

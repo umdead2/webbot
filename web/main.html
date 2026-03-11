@@ -3,21 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Bot Control Panel</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #e0e0e0; padding: 20px; }
-        .container { max-width: 900px; margin: auto; }
-        .card { background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .input-group { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-        input { background: #2d2d2d; border: 1px solid #444; color: white; padding: 10px; border-radius: 4px; flex: 1; min-width: 200px; }
-        button { padding: 10px 20px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }
-        .btn-launch { background: #2e7d32; color: white; width: 100%; margin-top: 10px; }
-        .btn-send { background: #1565c0; color: white; }
-        #console { height: 400px; overflow-y: auto; background: #000; color: #00ff00; padding: 15px; font-family: 'Consolas', 'Courier New', monospace; border-radius: 4px; border: 1px solid #444; font-size: 14px; }
-        .status-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 0.9em; }
-        .status-dot { height: 12px; width: 12px; border-radius: 50%; display: inline-block; background: #bbb; }
-        .online { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
-        .offline { background: #f44336; }
-    </style>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="server.js" defer></script>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -30,6 +18,7 @@
             <input type="password" id="pass" placeholder="Minecraft Password">
         </div>
         <button class="btn-launch" onclick="launchBot()">LAUNCH BOT</button>
+        <button id="btn-disconnect" class="btn-disconnect">DISCONNECT BOT</button>
         
         <div class="status-bar">
             <span id="status-dot" class="status-dot"></span>
@@ -46,65 +35,5 @@
         </div>
     </div>
 </div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script>
-    const socket = io();
-    const consoleDiv = document.getElementById('console');
-    const statusText = document.getElementById('status-text');
-    const statusDot = document.getElementById('status-dot');
-
-    function launchBot() {
-        const data = {
-            host: document.getElementById('host').value,
-            username: document.getElementById('user').value,
-            password: document.getElementById('pass').value
-        };
-        
-        if (!data.username || !data.password) {
-            alert("Please enter both a username and password.");
-            return;
-        }
-
-        // Clear console for new session
-        consoleDiv.innerHTML = '<div>[SYSTEM] Starting bot connection...</div>';
-        socket.emit('start_bot', data);
-    }
-
-    function sendCmd() {
-        const cmdInput = document.getElementById('cmd');
-        if (cmdInput.value.trim() !== "") {
-            socket.emit('command_from_web', cmdInput.value);
-            cmdInput.value = '';
-        }
-    }
-
-    // Handle incoming chat
-    socket.on('bot_chat', (msg) => {
-        const line = document.createElement('div');
-        line.textContent = msg;
-        consoleDiv.appendChild(line);
-        consoleDiv.scrollTop = consoleDiv.scrollHeight;
-    });
-
-    // Handle status updates
-    socket.on('bot_status', (status) => {
-        statusText.innerText = status;
-        
-        if (status.includes("Active") || status.includes("In Limbo")) {
-            statusDot.className = "status-dot online";
-        } else if (status === "Kicked" || status === "Error") {
-            statusDot.className = "status-dot offline";
-        } else {
-            statusDot.className = "status-dot";
-        }
-    });
-
-    // Allow Enter key to send
-    document.getElementById('cmd').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendCmd();
-    });
-</script>
-
 </body>
 </html>
