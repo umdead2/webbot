@@ -25,6 +25,7 @@ io.on('connection', (socket) => {
         version: '1.20.1', // Most Minesteal-style servers prefer 1.20.1
         hideErrors: true,
         clientRoot: null, 
+        disableWindowClick: true
       })
 
       // 1. SILENCE PHYSICS IMMEDIATELY
@@ -65,6 +66,25 @@ io.on('connection', (socket) => {
             }, 5000); 
         });
 
+
+        // Add this near your other bot.on events
+      bot.on('error', (err) => {
+          if (err.message.includes('slot >= 0')) {
+              console.log('[!] Caught inventory sync error (Normal during server swaps).');
+              return; // Ignore this specific error
+          }
+          console.log('[!] Bot Error:', err);
+      });
+
+      // Also add this to catch the "falsy value" crash specifically
+      process.on('uncaughtException', (err) => {
+          if (err.message.includes('slot >= 0')) {
+              console.log('[!] Preventing crash from inventory slot error...');
+          } else {
+              console.error('Critical Error:', err);
+              process.exit(1); 
+          }
+      });
       bot.on('kicked', (reason) => {
         const msg = typeof reason === 'string' ? reason : JSON.stringify(reason)
         console.log(`[!] KICKED: ${msg}`)
