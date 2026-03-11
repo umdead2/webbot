@@ -16,64 +16,50 @@ let spawnTimer = null
 // GLOBAL CRASH GUARD
 process.on('uncaughtException', (err) => {
   if (err.message && err.message.includes('slot >= 0')) {
-    console.log('[STABILITY GUARD] Ignored negative slot crash')
+    console.log('[GUARD] Prevented inventory crash')
     return
   }
-  console.error('[CRITICAL]', err)
+  console.error(err)
 })
 
-function patchInventory(bot) {
-
-  if (!bot.inventory) return
-
-  const originalUpdateSlot = bot.inventory.updateSlot
-
-  bot.inventory.updateSlot = function (slot, item) {
-
-    if (slot == null || slot < 0) {
-      console.log('[STABILITY] Prevented invalid inventory slot:', slot)
-      return
-    }
-
-    try {
-      return originalUpdateSlot.call(this, slot, item)
-    } catch (e) {
-      console.log('[STABILITY] Inventory update prevented crash')
-    }
-  }
-}
-
-function patchPackets(bot) {
+function disableInventory(bot) {
 
   const client = bot._client
 
+  // Block all inventory packets
+  const blocked = [
+    'set_slot',
+    'window_items',
+    'open_window',
+    'close_window',
+    'window_property'
+  ]
+
   const originalEmit = client.emit
+
   client.emit = function (event, packet) {
 
-    if (event === 'set_slot') {
-      if (!packet || packet.slot == null || packet.slot < 0) {
-        console.log('[STABILITY] Blocked bad set_slot')
-        return
-      }
-    }
-
-    if (event === 'window_items' && packet && packet.items) {
-      packet.items = packet.items.filter(i => i)
+    if (blocked.includes(event)) {
+      console.log('[STABILITY] Blocked inventory packet:', event)
+      return
     }
 
     return originalEmit.apply(this, arguments)
   }
 
+  // Block inventory clicks
   const originalWrite = client.write
+
   client.write = function (name, params) {
 
-    if (name === 'window_click' && params && params.slot < 0) {
-      console.log('[STABILITY] Blocked window_click')
+    if (name === 'window_click') {
+      console.log('[STABILITY] Prevented window_click')
       return
     }
 
     return originalWrite.apply(this, arguments)
   }
+
 }
 
 io.on('connection', (socket) => {
@@ -88,23 +74,17 @@ io.on('connection', (socket) => {
       version: '1.20.1',
       physicsEnabled: false,
       hideErrors: true,
-      disableWindowClick: true,
       checkTimeoutInterval: 60000
     })
 
-    // PATCH PACKETS IMMEDIATELY
-    patchPackets(bot)
+    // DISABLE INVENTORY SYSTEM
+    disableInventory(bot)
 
-    bot.once('spawn', () => {
+    bot.once('login', () => {
 
-      console.log('[+] Bot spawned')
+      console.log('[+] Connected')
 
-      // PATCH INVENTORY AFTER SPAWN
-      patchInventory(bot)
-
-      if (spawnTimer) clearTimeout(spawnTimer)
-
-      socket.emit('bot_status', 'Connected')
+      socket.emit('bot_status', 'Proxy Connected')
 
       spawnTimer = setTimeout(() => {
 
@@ -116,16 +96,18 @@ io.on('connection', (socket) => {
 
           bot.physics.enabled = true
 
+          // small movement so server loads entities
           bot.setControlState('jump', true)
-          setTimeout(() => bot.setControlState('jump', false), 500)
+          setTimeout(() => bot.setControlState('jump', false), 400)
 
-          console.log('[✔] Bot stable')
+          socket.emit('bot_status', 'Active & Stable')
 
-          socket.emit('bot_status', 'Active')
+          console.log('[✔] Bot running')
 
         }, 5000)
 
       }, 5000)
+
     })
 
     bot.on('messagestr', (msg) => {
@@ -137,24 +119,22 @@ io.on('connection', (socket) => {
       bot.acceptResourcePack()
     })
 
-    bot.on('windowOpen', () => {
-      if (bot.currentWindow) bot.closeWindow(bot.currentWindow)
-    })
-
     bot.on('kicked', (reason) => {
       const msg = typeof reason === 'string'
         ? reason
         : JSON.stringify(reason)
 
       console.log('[!] KICKED:', msg)
+      socket.emit('bot_chat', '[KICKED] ' + msg)
     })
 
     bot.on('error', (err) => {
-      console.log('[!] Error:', err.message)
+      console.log('[ERROR]', err.message)
     })
 
     bot.on('end', () => {
-      console.log('[-] Disconnected')
+      console.log('[-] Connection closed')
+      socket.emit('bot_status', 'Disconnected')
     })
 
   })
