@@ -25,7 +25,9 @@ io.on('connection', (socket) => {
         version: '1.20.1', // Most Minesteal-style servers prefer 1.20.1
         hideErrors: true,
         clientRoot: null, 
-        disableWindowClick: true
+        physicsEnabled: false,
+        disableWindowClick: true,
+        checkTimeoutInterval: 60000
       })
 
       // 1. SILENCE PHYSICS IMMEDIATELY
@@ -44,36 +46,32 @@ io.on('connection', (socket) => {
         bot.acceptResourcePack()
       })
 
-      bot.once('login', () => {
-
-            // 1. CLEAR any existing timer so they don't overlap
-            if (spawnTimer) clearTimeout(spawnTimer);
-            
-            socket.emit('bot_status', "World Loaded (Waiting 5s...)");
-            console.log('[!] Spawn detected. Starting login countdown...');
-
-            // 2. Start a fresh 5-second timer
-            spawnTimer = setTimeout(() => {
-                console.log('[>] Sending login commands...');
-                bot.chat(`/login ${data.password}`);
-                
-                // 3. Enable physics AFTER login
-                setTimeout(() => { 
-                    bot.physics.enabled = true; 
-                    socket.emit('bot_status', "Active (Physics ON)");
-                    console.log('[✔] Physics enabled.');
-                }, 3000);
-            }, 5000); 
-        });
-
-
-        // Add this near your other bot.on events
       bot.on('error', (err) => {
-          if (err.message.includes('slot >= 0')) {
-              console.log('[!] Caught inventory sync error (Normal during server swaps).');
-              return; // Ignore this specific error
-          }
-          console.log('[!] Bot Error:', err);
+        console.log(`[STABILITY GUARD] Caught: ${err.message}`);
+        // If it's the assertion error, we just keep the bot alive
+        if (err.name === 'AssertionError') return; 
+      });
+
+      bot.once('login', () => {
+        if (spawnTimer) clearTimeout(spawnTimer);
+        
+        socket.emit('bot_status', "Proxy Connected. Handshaking...");
+        
+        spawnTimer = setTimeout(() => {
+            console.log('[>] Sending login...');
+            bot.chat(`/login ${data.password}`);
+            
+            // WAIT an extra 5 seconds before turning on Physics
+            // This is the most important part for preventing the crash
+            setTimeout(() => { 
+                bot.physics.enabled = true; 
+                bot.setControlState('jump', true); // Tiny hop to "wake up" the bot
+                setTimeout(() => bot.setControlState('jump', false), 500);
+                
+                socket.emit('bot_status', "Active & Stable");
+                console.log('[✔] Physics/Entity sync complete.');
+            }, 5000); 
+        }, 5000); 
       });
 
       // Also add this to catch the "falsy value" crash specifically
