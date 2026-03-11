@@ -30,21 +30,42 @@ io.on('connection', (socket) => {
         checkTimeoutInterval: 60000
       })
       bot.on('inject_allowed', () => {
-        bot.physics.enabled = false 
-        bot._client.on('window_items', (packet) => {
-          if (packet.items) {
-            // Filter out any items that have a negative or invalid slot index
-            packet.items = packet.items.filter(item => item.slot >= 0);
-          }
-        });
+        bot.physics.enabled = false;
         
-        bot._client.on('set_slot', (packet) => {
-          if (packet.slot < 0) {
-            // Drop the packet if the slot is negative
-            packet.slot = 0; 
-            console.log('[STABILITY] Blocked negative set_slot crash.');
+        // Intercept and completely drop problematic packets
+        const originalWrite = bot._client.write;
+        bot._client.write = function(name, params) {
+          if (name === 'window_click' && params && params.slot < 0) {
+            console.log('[STABILITY] Blocked negative window_click.');
+            return; // Drop the packet entirely
           }
-        });
+          return originalWrite.apply(this, arguments);
+        };
+        
+        // Override the emit function to filter packets before they reach handlers
+        const originalEmit = bot._client.emit;
+        bot._client.emit = function(event, packet) {
+          if (event === 'set_slot' && packet && packet.slot < 0) {
+            console.log('[STABILITY] Blocked negative set_slot crash.');
+            return; // Don't emit this event at all
+          }
+          if (event === 'window_items' && packet && packet.items) {
+            packet.items = packet.items.filter(item => item && item.slot >= 0);
+          }
+          return originalEmit.apply(this, arguments);
+        };
+        
+        // Also patch the inventory directly to prevent any edge cases
+        if (bot.inventory) {
+          const originalUpdateSlot = bot.inventory.updateSlot;
+          bot.inventory.updateSlot = function(slot, item) {
+            if (slot < 0) {
+              console.log('[STABILITY] Prevented negative slot update.');
+              return;
+            }
+            return originalUpdateSlot.call(this, slot, item);
+          };
+        }
       });
 
       // 2. LOG ALL CHAT (To see if it says "Register" or "Banned")
