@@ -2,63 +2,373 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Bot Control Panel</title>
+    <title>MC Bot Panel</title>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="server.js" defer></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="OnlinePlayers">
-    <h3 style="text-align: center;">Online Players (<span id="player-count">0</span>)</h3>
-    <div id="player-list" style="max-height: 150px;  overflow-x: auto; font-family: monospace;"></div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SIDEBAR – Bot list + Add button
+════════════════════════════════════════════════════════════ -->
+<div id="sidebar">
+    <div id="sidebar-header">
+        <span class="sidebar-title">BOTS</span>
+        <button id="btn-add-bot" title="Add new bot">＋</button>
+    </div>
+    <div id="bot-tabs">
+        <!-- Bot tab items injected here -->
+    </div>
 </div>
-<div class="container">
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN CONTENT – Bot panels (one per bot, only active shown)
+════════════════════════════════════════════════════════════ -->
+<div id="main">
+    <div id="no-bots-msg">
+        Click <strong>＋</strong> in the sidebar to add a bot.
+    </div>
+    <!-- Bot panels injected here -->
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     ADD BOT MODAL
+════════════════════════════════════════════════════════════ -->
+<div id="modal-overlay" class="hidden">
+    <div id="modal">
+        <h3>New Bot</h3>
+        <label>Label (nickname)</label>
+        <input type="text" id="modal-label" placeholder="e.g. Admin Watcher">
+
+        <label>Auth Type</label>
+        <select id="modal-auth">
+            <option value="offline">Offline / Cracked</option>
+            <option value="microsoft">Microsoft (Java)</option>
+            <option value="bedrock">Bedrock (via Floodgate)</option>
+        </select>
+
+        <div class="modal-buttons">
+            <button id="modal-cancel" class="btn-disconnect">Cancel</button>
+            <button id="modal-confirm" class="btn-launch">Create</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const socket = io();
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let activeBotId = null;   // which tab is visible
+const botData   = {};     // botData[id] = { allPlayers: [], label, authType }
+
+// ─── Sidebar helpers ──────────────────────────────────────────────────────────
+function addBotTab(id, label, authType) {
+    botData[id] = { allPlayers: [], label, authType };
+
+    // Sidebar tab
+    const tab = document.createElement('div');
+    tab.className = 'bot-tab';
+    tab.id = `tab_${id}`;
+    tab.innerHTML = `
+        <span class="tab-dot status-dot offline" id="dot_${id}"></span>
+        <span class="tab-label">${label}</span>
+        <button class="tab-remove" title="Remove bot" onclick="removeBot('${id}', event)">✕</button>
+    `;
+    tab.addEventListener('click', () => switchBot(id));
+    document.getElementById('bot-tabs').appendChild(tab);
+
+    // Main panel
+    const panel = document.createElement('div');
+    panel.className = 'bot-panel hidden';
+    panel.id = `panel_${id}`;
+    panel.innerHTML = buildPanelHTML(id, label, authType);
+    document.getElementById('main').appendChild(panel);
+
+    document.getElementById('no-bots-msg').classList.add('hidden');
+    switchBot(id);
+    wirePanel(id);
+}
+
+function buildPanelHTML(id, label, authType) {
+    const msAuthNotice = authType === 'microsoft'
+        ? `<div id="ms-auth-box_${id}" class="ms-auth-box hidden">
+               <p>🔗 Microsoft Login Required:</p>
+               <a id="ms-auth-link_${id}" href="#" target="_blank">Open login page</a>
+               <span id="ms-auth-code_${id}" class="ms-code"></span>
+           </div>`
+        : '';
+
+    const bedrockNote = authType === 'bedrock'
+        ? `<small style="color:#888;display:block;margin-top:4px;">Bedrock: username must start with <code>.</code> if using Floodgate.</small>`
+        : '';
+
+    return `
+    <div class="panel-header">
+        <h2>${label}</h2>
+        <span class="auth-badge auth-${authType}">${authType.toUpperCase()}</span>
+    </div>
+
+    <!-- Online Players -->
+    <div class="OnlinePlayers">
+        <h3 style="text-align:center;">Online Players (<span id="player-count_${id}">0</span>)</h3>
+        <div id="player-list_${id}" class="player-grid"></div>
+    </div>
+
+    <!-- Bot Config -->
     <div class="card">
-        <h3 style="text-align: center;">Bot Configuration</h3>
-        
+        <h3 style="text-align:center;">Bot Configuration</h3>
+        ${msAuthNotice}
+        ${bedrockNote}
         <div class="input-group">
-            <input type="text" id="host" placeholder="Server IP" value="play.minesteal.xyz">
-            <input type="text" id="user" placeholder="Bot Username">
-            <input type="password" id="pass" placeholder="Minecraft Password">
-        </div>
-
-        <div class="button-group">
-            <button class="btn-launch" onclick="launchBot()">LAUNCH BOT</button>
-            <button id="btn-disconnect" class="btn-disconnect">DISCONNECT</button>
-        </div>
-
-        <div class="status-bar">
-            <span id="status-dot" class="status-dot"></span>
-            Status: <span id="status-text">Disconnected</span>
-        </div>
-    </div>
-
-    <div class="admin">
-        <h3 style="text-align: center;">Admin Panel </h3>
-        <div class="input-group">
-            <select id="commands">
-                <option value="/ipmute ">/ipmute</option>
+            <input type="text" id="host_${id}" placeholder="Server IP" value="play.minesteal.xyz">
+            <input type="text" id="user_${id}" placeholder="Bot Username">
+            <input type="password" id="pass_${id}" placeholder="Password (for /login)">
+            <select id="version_${id}" title="Minecraft version">
+                <option value="1.20.1">1.20.1</option>
+                <option value="1.19.4">1.19.4</option>
+                <option value="1.18.2">1.18.2</option>
+                <option value="1.17.1">1.17.1</option>
+                <option value="1.16.5">1.16.5</option>
             </select>
-            
-            <div class="search-wrapper">
-                <input type="text" id="player-search" placeholder="Search player..." autocomplete="off">
-                <div id="search-results" class="custom-dropdown"></div>
-            </div>
-            <input type="text" id="time" placeholder="time">
-            <input type="text" id="reason" placeholder="reason">
-            <input type="text" id="offense" placeholder="offense (2nd)">
-            <button class="btn-send" onclick="sendToSelected()">SEND</button>
+        </div>
+        <div class="button-group">
+            <button class="btn-launch" onclick="launchBot('${id}')">LAUNCH</button>
+            <button class="btn-disconnect" onclick="stopBot('${id}')">DISCONNECT</button>
+        </div>
+        <div class="status-bar">
+            <span id="status-dot_${id}" class="status-dot offline"></span>
+            Status: <span id="status-text_${id}">Disconnected</span>
         </div>
     </div>
 
-    <div id="console"></div>
-
-    <div class="card" style="margin-top: 20px;">
+    <!-- Admin Panel -->
+    <div class="admin">
+        <h3 style="text-align:center;">Admin Panel</h3>
         <div class="input-group">
-            <input type="text" id="cmd" placeholder="Type a message or command..." style="flex: 4;">
-            <button class="btn-send" onclick="sendCmd()">SEND</button>
+            <select id="commands_${id}">
+                <option value="/ipmute ">/ipmute</option>
+                <option value="/ban ">/ban</option>
+                <option value="/kick ">/kick</option>
+                <option value="/mute ">/mute</option>
+                <option value="/warn ">/warn</option>
+            </select>
+            <div class="search-wrapper">
+                <input type="text" id="player-search_${id}" placeholder="Search player..." autocomplete="off">
+                <div id="search-results_${id}" class="custom-dropdown"></div>
+            </div>
+            <input type="text" id="time_${id}" placeholder="time">
+            <input type="text" id="reason_${id}" placeholder="reason">
+            <input type="text" id="offense_${id}" placeholder="offense (2nd)">
+            <button class="btn-send" onclick="sendToSelected('${id}')">SEND</button>
         </div>
     </div>
-</div>
+
+    <!-- Console -->
+    <div id="console_${id}" class="console"></div>
+
+    <!-- Chat Input -->
+    <div class="card" style="margin-top:20px;">
+        <div class="input-group">
+            <input type="text" id="cmd_${id}" placeholder="Type a message or command..." style="flex:4;"
+                onkeypress="if(event.key==='Enter') sendCmd('${id}')">
+            <button class="btn-send" onclick="sendCmd('${id}')">SEND</button>
+        </div>
+    </div>
+    `;
+}
+
+function switchBot(id) {
+    activeBotId = id;
+    document.querySelectorAll('.bot-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.bot-tab').forEach(t => t.classList.remove('active'));
+    const panel = document.getElementById(`panel_${id}`);
+    const tab   = document.getElementById(`tab_${id}`);
+    if (panel) panel.classList.remove('hidden');
+    if (tab)   tab.classList.add('active');
+}
+
+function removeBot(id, e) {
+    e.stopPropagation();
+    socket.emit('remove_bot', { id });
+}
+
+// ─── Wire per-panel search dropdown ──────────────────────────────────────────
+function wirePanel(id) {
+    const searchInput = document.getElementById(`player-search_${id}`);
+    const resultsDiv  = document.getElementById(`search-results_${id}`);
+
+    searchInput.addEventListener('input', () => {
+        const val = searchInput.value.toLowerCase();
+        resultsDiv.innerHTML = '';
+        if (!val) { resultsDiv.style.display = 'none'; return; }
+
+        const matches = (botData[id]?.allPlayers || []).filter(p => p.toLowerCase().includes(val));
+        if (matches.length > 0) {
+            resultsDiv.style.display = 'block';
+            matches.forEach(name => {
+                const div = document.createElement('div');
+                div.classList.add('dropdown-item');
+                div.textContent = name;
+                div.onclick = () => { searchInput.value = name; resultsDiv.style.display = 'none'; };
+                resultsDiv.appendChild(div);
+            });
+        } else {
+            resultsDiv.style.display = 'none';
+        }
+    });
+}
+
+// ─── Bot actions ──────────────────────────────────────────────────────────────
+function launchBot(id) {
+    const data = {
+        id,
+        host:     document.getElementById(`host_${id}`).value,
+        username: document.getElementById(`user_${id}`).value,
+        password: document.getElementById(`pass_${id}`).value,
+        version:  document.getElementById(`version_${id}`).value,
+        authType: botData[id]?.authType || 'offline',
+        label:    botData[id]?.label,
+    };
+
+    if (!data.username) { alert('Please enter a username.'); return; }
+
+    appendConsole(id, '[SYSTEM] Starting bot connection...');
+    socket.emit('start_bot', data);
+}
+
+function stopBot(id) {
+    socket.emit('stop_bot', { id });
+}
+
+function sendCmd(id) {
+    const input = document.getElementById(`cmd_${id}`);
+    if (input.value.trim()) {
+        socket.emit('command_from_web', { id, cmd: input.value });
+        input.value = '';
+    }
+}
+
+function sendToSelected(id) {
+    const player  = document.getElementById(`player-search_${id}`).value.trim();
+    const command = document.getElementById(`commands_${id}`).value;
+    const time    = document.getElementById(`time_${id}`).value.trim();
+    const reason  = document.getElementById(`reason_${id}`).value.trim();
+    const offense = document.getElementById(`offense_${id}`).value.trim();
+
+    if (!player) { alert('You must select a player first!'); return; }
+
+    const finalCmd = `${command}${player} ${time} ${reason} ${offense}`.trim();
+    socket.emit('command_from_web', { id, cmd: finalCmd });
+
+    document.getElementById(`player-search_${id}`).value = '';
+    document.getElementById(`time_${id}`).value = '';
+    document.getElementById(`reason_${id}`).value = '';
+    document.getElementById(`offense_${id}`).value = '';
+    document.getElementById(`search-results_${id}`).style.display = 'none';
+}
+
+function appendConsole(id, msg) {
+    const c = document.getElementById(`console_${id}`);
+    if (!c) return;
+    const line = document.createElement('div');
+    line.textContent = msg;
+    c.appendChild(line);
+    c.scrollTop = c.scrollHeight;
+}
+
+// ─── Socket events ────────────────────────────────────────────────────────────
+
+// Full list of bots on reconnect
+socket.on('bot_list', (list) => {
+    list.forEach(({ id, label, authType }) => {
+        if (!botData[id]) addBotTab(id, label, authType);
+    });
+});
+
+socket.on('bot_added', ({ id, label, authType }) => {
+    if (!botData[id]) addBotTab(id, label, authType);
+});
+
+socket.on('bot_removed', ({ id }) => {
+    delete botData[id];
+    document.getElementById(`tab_${id}`)?.remove();
+    document.getElementById(`panel_${id}`)?.remove();
+
+    const remaining = Object.keys(botData);
+    if (remaining.length === 0) {
+        activeBotId = null;
+        document.getElementById('no-bots-msg').classList.remove('hidden');
+    } else {
+        switchBot(remaining[0]);
+    }
+});
+
+// Dynamic per-bot socket listeners (set up once per bot id)
+const subscribedIds = new Set();
+function subscribeToBot(id) {
+    if (subscribedIds.has(id)) return;
+    subscribedIds.add(id);
+
+    socket.on(`bot_status_${id}`, (status) => {
+        const txt = document.getElementById(`status-text_${id}`);
+        const dot = document.getElementById(`status-dot_${id}`);
+        const tabDot = document.getElementById(`dot_${id}`);
+        if (txt) txt.innerText = status;
+        const online = status.includes('Active') || status.includes('Limbo') || status.includes('Loaded');
+        [dot, tabDot].forEach(d => {
+            if (!d) return;
+            d.className = 'status-dot ' + (online ? 'online' : 'offline');
+        });
+    });
+
+    socket.on(`bot_chat_${id}`, (msg) => appendConsole(id, msg));
+
+    socket.on(`player_list_${id}`, (players) => {
+        if (!botData[id]) return;
+        botData[id].allPlayers = players;
+        const countEl = document.getElementById(`player-count_${id}`);
+        const listEl  = document.getElementById(`player-list_${id}`);
+        if (countEl) countEl.innerText = players.length;
+        if (listEl)  listEl.innerHTML = players.map(n => `<div>${n}</div>`).join('');
+    });
+
+    socket.on(`ms_auth_${id}`, ({ url, code }) => {
+        const box  = document.getElementById(`ms-auth-box_${id}`);
+        const link = document.getElementById(`ms-auth-link_${id}`);
+        const codeEl = document.getElementById(`ms-auth-code_${id}`);
+        if (!box) return;
+        box.classList.remove('hidden');
+        link.href = url;
+        link.textContent = url;
+        if (codeEl) codeEl.textContent = `Code: ${code}`;
+    });
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+document.getElementById('btn-add-bot').addEventListener('click', () => {
+    document.getElementById('modal-overlay').classList.remove('hidden');
+});
+document.getElementById('modal-cancel').addEventListener('click', () => {
+    document.getElementById('modal-overlay').classList.add('hidden');
+});
+document.getElementById('modal-confirm').addEventListener('click', () => {
+    const label    = document.getElementById('modal-label').value.trim() || 'New Bot';
+    const authType = document.getElementById('modal-auth').value;
+    socket.emit('create_bot', { label, authType });
+    document.getElementById('modal-overlay').classList.add('hidden');
+    document.getElementById('modal-label').value = '';
+});
+
+// When bot_added fires, subscribe to its channels
+socket.on('bot_added', ({ id }) => subscribeToBot(id));
+socket.on('bot_list',  (list) => list.forEach(b => subscribeToBot(b.id)));
+
+// Close dropdown on outside click
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrapper')) {
+        document.querySelectorAll('.custom-dropdown').forEach(d => d.style.display = 'none');
+    }
+});
+</script>
 </body>
 </html>

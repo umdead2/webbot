@@ -4,125 +4,186 @@ const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const mineflayer = require('mineflayer');
 
+// 🔥 REQUIRED for Microsoft login link
+process.env.DEBUG = 'minecraft-protocol';
+
 app.use(express.static('web'));
+app.get('/', (req, res) => res.sendFile(__dirname + '/web/main.html'));
 
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/web/main.html');
-});
+const bots = {};
+let nextBotId = 1;
 
-let bot;
-let spawnTimer;
-let chatHistory = [];
+function genId() { return `bot_${nextBotId++}`; }
 
-// --- HELPER: BROADCAST PLAYER LIST ---
-// Using io.emit so every open tab gets the update
-function broadcastPlayerList() {
-    if (bot && bot.players) {
-        const playerNames = Object.keys(bot.players);
-        io.emit('player_list', playerNames);
+function broadcastPlayerList(id) {
+    const entry = bots[id];
+    if (entry && entry.bot && entry.bot.players) {
+        io.emit(`player_list_${id}`, Object.keys(entry.bot.players));
     }
 }
 
-// --- HELPER: SETUP EVENTS ---
-function setupBotEvents(socket) {
-    if (!bot) return;
+function emitStatus(id, status) {
+    io.emit(`bot_status_${id}`, status);
+}
 
-    // Clean up to prevent memory leaks
+function setupBotEvents(id, socket) {
+    const entry = bots[id];
+    if (!entry || !entry.bot) return;
+    const { bot } = entry;
+
     bot.removeAllListeners('messagestr');
     bot.removeAllListeners('playerJoined');
     bot.removeAllListeners('playerLeft');
     bot.removeAllListeners('error');
     bot.removeAllListeners('kicked');
 
-    // Sync Chat History to the person who just connected
-    chatHistory.forEach(msg => socket.emit('bot_chat', msg));
+    entry.chatHistory.forEach(msg => socket.emit(`bot_chat_${id}`, msg));
 
-    // Listeners
     bot.on('messagestr', (message) => {
-        io.emit('bot_chat', message); 
-        if (!chatHistory.includes(message)) {
-            chatHistory.push(message);
-            if (chatHistory.length > 50) chatHistory.shift();
+        io.emit(`bot_chat_${id}`, message);
+        if (!entry.chatHistory.includes(message)) {
+            entry.chatHistory.push(message);
+            if (entry.chatHistory.length > 50) entry.chatHistory.shift();
         }
     });
 
-    // When someone joins/leaves, tell EVERYONE
-    bot.on('playerJoined', broadcastPlayerList);
-    bot.on('playerLeft', broadcastPlayerList);
+    bot.on('playerJoined', () => broadcastPlayerList(id));
+    bot.on('playerLeft', () => broadcastPlayerList(id));
 
-    bot.on('error', (err) => io.emit('bot_status', 'Error: ' + err.message));
-    bot.on('kicked', (reason) => io.emit('bot_status', 'Kicked from server'));
+    bot.on('error', err => {
+        console.log(`[${id}]`, err);
+        emitStatus(id, err.message);
+    });
+
+    bot.on('kicked', () => emitStatus(id, 'Kicked'));
 }
 
 io.on('connection', (socket) => {
-    // 1. SYNC IF BOT IS ALREADY RUNNING
-    if (bot) {
-        console.log('[Panel] Syncing existing bot state...');
-        socket.emit('bot_status', 'Active (Physics ON)');
-        if (bot.players) {
-            socket.emit('player_list', Object.keys(bot.players));
+
+    const summary = Object.entries(bots).map(([id, e]) => ({
+        id,
+        label: e.config.label,
+        authType: e.config.authType,
+    }));
+    socket.emit('bot_list', summary);
+
+    Object.entries(bots).forEach(([id, entry]) => {
+        socket.emit(`bot_status_${id}`, 'Active (Physics ON)');
+        if (entry.bot && entry.bot.players) {
+            socket.emit(`player_list_${id}`, Object.keys(entry.bot.players));
         }
-        setupBotEvents(socket); 
-    }
+        setupBotEvents(id, socket);
+    });
 
-    // 2. START BOT
+    socket.on('create_bot', (data) => {
+        const id = genId();
+        const label = data.label || `Bot ${id}`;
+        bots[id] = {
+            bot: null,
+            chatHistory: [],
+            spawnTimer: null,
+            config: { label, authType: data.authType || 'offline' }
+        };
+        io.emit('bot_added', { id, label, authType: data.authType || 'offline' });
+    });
+
     socket.on('start_bot', (data) => {
-        if (bot) return;
+        const { id } = data;
+        if (!bots[id] || bots[id].bot) return;
 
-        bot = mineflayer.createBot({
+        const entry = bots[id];
+        entry.config = { ...entry.config, ...data };
+
+        const botOptions = {
             host: data.host || 'play.minesteal.xyz',
-            username: data.username,
-            version: '1.20.1',
+            version: data.version || '1.20.1',
             hideErrors: true,
             physicsEnabled: false,
-            checkTimeoutInterval: 60000
-        });
+            checkTimeoutInterval: 60000,
+        };
 
-        setupBotEvents(socket);
+        if (data.authType === 'microsoft') {
+            botOptions.auth = 'microsoft';
+            botOptions.username = data.username;
+            botOptions.profilesFolder = `./profiles/${id}`;
 
-        bot.on('inject_allowed', () => { bot.physics.enabled = false; });
-        bot.on('resource_pack', () => { bot.acceptResourcePack(); });
-
-        bot.once('login', () => {
-            if (spawnTimer) clearTimeout(spawnTimer);
-            socket.emit('bot_status', "World Loaded (Waiting 5s...)");
-            
-            spawnTimer = setTimeout(() => {
-                bot.chat(`/login ${data.password}`);
-                setTimeout(() => { 
-                    bot.physics.enabled = true; 
-                    io.emit('bot_status', "Active (Physics ON)");
-                }, 3000);
-            }, 5000); 
-        });
-
-        bot.on('spawn', () => {
-            setTimeout(broadcastPlayerList, 2000);
-        });
-
-        bot.on('end', () => {
-            console.log('[-] Connection Lost.');
-            io.emit('bot_status', 'Disconnected');
-            bot = null;
-        });
-    });
-
-    // 3. WEB COMMANDS
-    socket.on('command_from_web', (cmd) => {
-        if (bot && bot.chat) bot.chat(cmd);
-    });
-
-    socket.on('stop_bot', () => {
-        if (bot) {
-            if (spawnTimer) clearTimeout(spawnTimer);
-            bot.removeAllListeners();
-            bot.quit();
-            bot = null;
-            io.emit('bot_status', 'Disconnected');
-            chatHistory = [];
+            emitStatus(id, 'Waiting for Microsoft login (check console)');
+        } else {
+            botOptions.username = data.username;
+            botOptions.auth = 'offline';
         }
+
+        spawnBot(id, botOptions, data, socket);
+    });
+
+    socket.on('command_from_web', ({ id, cmd }) => {
+        const entry = bots[id];
+        if (entry && entry.bot) entry.bot.chat(cmd);
+    });
+
+    socket.on('stop_bot', ({ id }) => {
+        const entry = bots[id];
+        if (!entry) return;
+
+        if (entry.spawnTimer) clearTimeout(entry.spawnTimer);
+
+        if (entry.bot) {
+            entry.bot.removeAllListeners();
+            entry.bot.quit();
+            entry.bot = null;
+        }
+
+        entry.chatHistory = [];
+        emitStatus(id, 'Disconnected');
+    });
+
+    socket.on('remove_bot', ({ id }) => {
+        const entry = bots[id];
+        if (!entry) return;
+
+        if (entry.spawnTimer) clearTimeout(entry.spawnTimer);
+        if (entry.bot) entry.bot.quit();
+
+        delete bots[id];
+        io.emit('bot_removed', { id });
     });
 });
 
-// Start Server
+function spawnBot(id, botOptions, data, socket) {
+    const entry = bots[id];
+    const bot = mineflayer.createBot(botOptions);
+    entry.bot = bot;
+
+    setupBotEvents(id, socket);
+
+    bot.on('inject_allowed', () => { bot.physics.enabled = false; });
+    bot.on('resource_pack', () => bot.acceptResourcePack());
+
+    bot.once('login', () => {
+        emitStatus(id, 'World Loaded...');
+
+        entry.spawnTimer = setTimeout(() => {
+            if (data.password) bot.chat(`/login ${data.password}`);
+            setTimeout(() => {
+                bot.physics.enabled = true;
+                emitStatus(id, 'Active (Physics ON)');
+            }, 3000);
+        }, 5000);
+    });
+
+    bot.on('spawn', () => {
+        setTimeout(() => broadcastPlayerList(id), 2000);
+    });
+
+    bot.on('end', () => {
+        entry.bot = null;
+        emitStatus(id, 'Disconnected');
+
+        // 🔁 Auto reconnect
+        setTimeout(() => {
+            spawnBot(id, botOptions, data, socket);
+        }, 5000);
+    });
+}
+
 http.listen(8080, () => console.log('Panel: http://localhost:8080'));
