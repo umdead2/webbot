@@ -4,9 +4,6 @@ const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const mineflayer = require('mineflayer');
 
-// 🔥 REQUIRED for Microsoft login link
-process.env.DEBUG = 'minecraft-protocol';
-
 app.use(express.static('web'));
 app.get('/', (req, res) => res.sendFile(__dirname + '/web/main.html'));
 
@@ -48,30 +45,44 @@ function setupBotEvents(id, socket) {
     });
 
     bot.on('playerJoined', () => broadcastPlayerList(id));
-    bot.on('playerLeft', () => broadcastPlayerList(id));
+    bot.on('playerLeft',   () => broadcastPlayerList(id));
 
     bot.on('error', err => {
-        console.log(`[${id}]`, err);
-        emitStatus(id, err.message);
+        entry.lastError = err.message || String(err);
+        console.log(`[${id}]`, err.message);
+        emitStatus(id, 'Error: ' + err.message);
     });
 
-    bot.on('kicked', () => emitStatus(id, 'Kicked'));
+    bot.on('kicked', (reason) => {
+        entry.lastError = 'kicked';
+        emitStatus(id, 'Kicked: ' + reason);
+    });
+}
+
+// Auth errors where retrying will never help
+const FATAL_ERRORS = [
+    'Failed to obtain profile data',
+    'RateLimiter disallowed',
+    'does the account own minecraft',
+    'Invalid credentials',
+    'Not authenticated',
+];
+
+function isFatal(msg) {
+    return msg && FATAL_ERRORS.some(e => msg.includes(e));
 }
 
 io.on('connection', (socket) => {
 
-    const summary = Object.entries(bots).map(([id, e]) => ({
-        id,
-        label: e.config.label,
-        authType: e.config.authType,
-    }));
-    socket.emit('bot_list', summary);
+    socket.emit('bot_list', Object.entries(bots).map(([id, e]) => ({
+        id, label: e.config.label, authType: e.config.authType,
+    })));
 
     Object.entries(bots).forEach(([id, entry]) => {
-        socket.emit(`bot_status_${id}`, 'Active (Physics ON)');
-        if (entry.bot && entry.bot.players) {
+        const status = entry.bot ? 'Active (Physics ON)' : 'Disconnected';
+        socket.emit(`bot_status_${id}`, status);
+        if (entry.bot && entry.bot.players)
             socket.emit(`player_list_${id}`, Object.keys(entry.bot.players));
-        }
         setupBotEvents(id, socket);
     });
 
@@ -79,9 +90,9 @@ io.on('connection', (socket) => {
         const id = genId();
         const label = data.label || `Bot ${id}`;
         bots[id] = {
-            bot: null,
-            chatHistory: [],
-            spawnTimer: null,
+            bot: null, chatHistory: [], spawnTimer: null,
+            reconnectTimer: null, reconnectDelay: 5000,
+            manuallyStopped: false, lastError: null,
             config: { label, authType: data.authType || 'offline' }
         };
         io.emit('bot_added', { id, label, authType: data.authType || 'offline' });
@@ -93,9 +104,11 @@ io.on('connection', (socket) => {
 
         const entry = bots[id];
         entry.config = { ...entry.config, ...data };
+        entry.manuallyStopped = false;
+        entry.reconnectDelay = 5000;
 
         const botOptions = {
-            host: data.host || 'play.minesteal.xyz',
+            host: data.host || 'play.donutsmp.net',
             version: data.version || '1.20.1',
             hideErrors: true,
             physicsEnabled: false,
@@ -106,8 +119,7 @@ io.on('connection', (socket) => {
             botOptions.auth = 'microsoft';
             botOptions.username = data.username;
             botOptions.profilesFolder = `./profiles/${id}`;
-
-            emitStatus(id, 'Waiting for Microsoft login (check console)');
+            emitStatus(id, 'Waiting for Microsoft login...');
         } else {
             botOptions.username = data.username;
             botOptions.auth = 'offline';
@@ -125,7 +137,9 @@ io.on('connection', (socket) => {
         const entry = bots[id];
         if (!entry) return;
 
-        if (entry.spawnTimer) clearTimeout(entry.spawnTimer);
+        entry.manuallyStopped = true;
+        if (entry.spawnTimer)     clearTimeout(entry.spawnTimer);
+        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
 
         if (entry.bot) {
             entry.bot.removeAllListeners();
@@ -134,6 +148,7 @@ io.on('connection', (socket) => {
         }
 
         entry.chatHistory = [];
+        entry.reconnectDelay = 5000;
         emitStatus(id, 'Disconnected');
     });
 
@@ -141,8 +156,10 @@ io.on('connection', (socket) => {
         const entry = bots[id];
         if (!entry) return;
 
-        if (entry.spawnTimer) clearTimeout(entry.spawnTimer);
-        if (entry.bot) entry.bot.quit();
+        entry.manuallyStopped = true;
+        if (entry.spawnTimer)     clearTimeout(entry.spawnTimer);
+        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+        if (entry.bot) { entry.bot.removeAllListeners(); entry.bot.quit(); }
 
         delete bots[id];
         io.emit('bot_removed', { id });
@@ -151,15 +168,40 @@ io.on('connection', (socket) => {
 
 function spawnBot(id, botOptions, data, socket) {
     const entry = bots[id];
-    const bot = mineflayer.createBot(botOptions);
-    entry.bot = bot;
+    if (!entry || entry.manuallyStopped) return;
 
+    let bot;
+    try {
+        bot = mineflayer.createBot(botOptions);
+    } catch (err) {
+        emitStatus(id, 'Failed to create bot: ' + err.message);
+        return;
+    }
+
+    entry.bot = bot;
+    entry.lastError = null;
     setupBotEvents(id, socket);
 
     bot.on('inject_allowed', () => { bot.physics.enabled = false; });
-    bot.on('resource_pack', () => bot.acceptResourcePack());
+    bot.on('resource_pack',  () => bot.acceptResourcePack());
+
+    // ── Brand spoof ───────────────────────────────────────────────────────
+    // Writes the minecraft:brand plugin channel packet with "vanilla"
+    // immediately after the server handshake so we don't fingerprint as
+    // mineflayer. The \x07 is a VarInt for 7, the length of "vanilla".
+    bot._client.on('login', () => {
+        try {
+            bot._client.write('custom_payload', {
+                channel: 'minecraft:brand',
+                data: Buffer.from('\x07vanilla'),
+            });
+        } catch (e) {
+            console.warn(`[${id}] Brand write failed:`, e.message);
+        }
+    });
 
     bot.once('login', () => {
+        entry.reconnectDelay = 5000; // reset backoff on successful login
         emitStatus(id, 'World Loaded...');
 
         entry.spawnTimer = setTimeout(() => {
@@ -177,12 +219,30 @@ function spawnBot(id, botOptions, data, socket) {
 
     bot.on('end', () => {
         entry.bot = null;
-        emitStatus(id, 'Disconnected');
+        const err = entry.lastError;
 
-        // 🔁 Auto reconnect
-        setTimeout(() => {
-            spawnBot(id, botOptions, data, socket);
-        }, 5000);
+        if (entry.manuallyStopped) {
+            emitStatus(id, 'Disconnected');
+            return;
+        }
+
+        if (isFatal(err)) {
+            emitStatus(id, `Auth failed, not reconnecting: ${err}`);
+            console.error(`[${id}] Fatal auth error – stopping:`, err);
+            return;
+        }
+
+        const delay = entry.reconnectDelay;
+        entry.reconnectDelay = Math.min(delay * 2, 60000); // 5s→10s→20s→40s→60s cap
+
+        emitStatus(id, `Disconnected. Reconnecting in ${delay / 1000}s...`);
+        console.log(`[${id}] Reconnecting in ${delay / 1000}s`);
+
+        entry.reconnectTimer = setTimeout(() => {
+            if (bots[id] && !bots[id].manuallyStopped) {
+                spawnBot(id, botOptions, data, socket);
+            }
+        }, delay);
     });
 }
 
