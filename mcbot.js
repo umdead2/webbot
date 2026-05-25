@@ -3,6 +3,7 @@ const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const mineflayer = require('mineflayer');
+const { Vec3 } = require('vec3');
 
 app.use(express.static('web'));
 app.get('/', (req, res) => res.sendFile(__dirname + '/web/main.html'));
@@ -177,7 +178,20 @@ function spawnBot(id, botOptions, data, socket) {
         emitStatus(id, 'Failed to create bot: ' + err.message);
         return;
     }
-
+    const farmOffsets = [
+        {x: 0, z: 2},  // Up
+        {x: 0, z: -2}, // Down
+        {x: 2, z: 0},  // Right
+        {x: -2, z: 0}  // Left
+    ];
+    bot.setMaxListeners(0);
+    let lastInventoryCount = -1;
+    let isDigging = false; 
+    let isPlacing = false;
+    let isRightClicking = false;
+    let rightClickInterval = null;
+    let inventoryFull = false;
+    let isInSellGUI = false;
     entry.bot = bot;
     entry.lastError = null;
     setupBotEvents(id, socket);
@@ -215,7 +229,223 @@ function spawnBot(id, botOptions, data, socket) {
 
     bot.on('spawn', () => {
         setTimeout(() => broadcastPlayerList(id), 2000);
+        startRightClick();
     });
+    // Add this lock variable outside the function
+
+    function startRightClick() {
+        console.log(`[DEBUG] startRightClick called - isRightClicking: ${isRightClicking}`);
+        if (isRightClicking) return;
+        isRightClicking = true;
+        
+        console.log(`[${new Date().toLocaleTimeString()}] [FARM] Mode: ${bot.username === 'dominance2' ? 'DIGGING' : 'PLANTING'}`);
+        
+        rightClickInterval = setInterval(async () => {
+            if (!isRightClicking || isInSellGUI) return;
+
+            for (const offset of farmOffsets) {
+                if (bot.username === 'dominance2') {
+                    const pos = bot.entity.position.floored().offset(offset.x, -2, offset.z);
+                    const plantBlock = bot.blockAt(pos);
+
+                    if (!plantBlock || plantBlock.name !== 'potatoes') continue;
+
+                    const props = plantBlock.getProperties();
+
+                    if (props.age < 7) continue;
+
+                    if (!isDigging) {
+                        const dist = bot.entity.position.distanceTo(plantBlock.position);
+                        if (dist > 4.5) continue;
+
+                        isDigging = true;
+
+                        await bot.lookAt(plantBlock.position.offset(0.5, 0.5, 0.5), true);
+
+                        const hoe = bot.inventory.items().find(item => item.name.includes('hoe'));
+                        if (hoe) await bot.equip(hoe, 'hand');
+
+                        try {
+                            await bot.dig(plantBlock, true);
+                        } catch (err) {
+                            try {
+                                await bot.activateBlock(plantBlock);
+                            } catch (err2) {
+                            }
+                            bot.stopDigging();
+                        } finally {
+                            isDigging = false;
+                        }
+                    }
+                }
+                // MODE 2: Planting (everyone else)
+                else {
+                    const pos = bot.entity.position.floored().offset(offset.x, 0, offset.z);
+                    const farmlandBlock = bot.blockAt(pos);
+
+                    if (!farmlandBlock || farmlandBlock.name !== 'farmland') continue;
+
+                    const plantPos = pos.offset(0, 1, 0);
+                    const plantBlock = bot.blockAt(plantPos);
+
+                    if (plantBlock && plantBlock.name === 'air' && !isPlacing) {
+                        const potatoItem = bot.inventory.items().find(item => item.name === 'potato');
+                        if (potatoItem) {
+                            isPlacing = true;
+
+                            const dx = farmlandBlock.position.x + 0.5 - bot.entity.position.x;
+                            const dy = farmlandBlock.position.y + 0.5 - (bot.entity.position.y + 1.62);
+                            const dz = farmlandBlock.position.z + 0.5 - bot.entity.position.z;
+
+                            const targetYaw = Math.atan2(-dx, dz);
+                            const targetPitch = Math.atan2(-dy, Math.sqrt(dx * dx + dz * dz));
+
+                            const yaw = bot.entity.yaw + (targetYaw - bot.entity.yaw) * 0.2;
+                            const pitch = bot.entity.pitch + (targetPitch - bot.entity.pitch) * 0.2;
+
+                            bot.look(yaw, pitch, false);
+
+                            await bot.equip(potatoItem, 'hand');
+                            bot.placeBlock(farmlandBlock, new Vec3(0, 1, 0)).catch(() => {});
+
+                            await new Promise(r => setTimeout(r, 50));
+                            isPlacing = false;
+                        }
+                    }
+                }
+            }
+        }, 200);
+    }
+    function stopRightClick() {
+        if (rightClickInterval) {
+            clearInterval(rightClickInterval);
+            rightClickInterval = null;
+        }
+        isRightClicking = false;
+        console.log(`[${new Date().toLocaleTimeString()}] [FARM] Stopped right click`);
+        }
+
+        // Check inventory every 500ms
+        setInterval(() => {
+        const occupiedSlots = bot.inventory.items().length;
+
+        if (occupiedSlots !== lastInventoryCount) {
+            console.log(`[${new Date().toLocaleTimeString()}] [FARM] Inventory updated: ${occupiedSlots}/36`);
+            lastInventoryCount = occupiedSlots; // Update the record
+        }
+        if (!isInSellGUI) {
+            checkInventory();
+        }
+        }, 500);
+
+        function checkInventory() {
+            // bot.inventory.emptySlotCount() checks the entire player inventory (all 36 slots).
+            // If it is 0, it means every single slot is completely full.
+            const emptySlots = bot.inventory.emptySlotCount();
+            
+            if (emptySlots === 0 && !inventoryFull) {
+                inventoryFull = true;
+                console.log(`[${new Date().toLocaleTimeString()}] [INVENTORY] Inventory full! Stopping farm and opening sell GUI...`);
+                
+                // Stop right clicking
+                stopRightClick();
+
+                // Send sell command
+                setTimeout(() => {
+                    bot.chat('/sellgui');
+                    console.log(`[${new Date().toLocaleTimeString()}] [SELL] Sent /sellgui command`);
+                    isInSellGUI = true;
+                }, 300);
+            }
+        }
+
+        // Listen for window open
+        bot.on('windowOpen', (window) => {
+        if (isInSellGUI) {
+            console.log(`[${new Date().toLocaleTimeString()}] [GUI] Sell GUI opened - selling items...`);
+            
+            // Wait a bit for GUI to fully load
+            setTimeout(() => {
+            sellAllItems();
+            }, 500);
+        }
+        });
+
+        async function sellAllItems() {
+            try {
+                const window = bot.currentWindow;
+                
+                if (!window) {
+                    console.log(`[${new Date().toLocaleTimeString()}] [ERROR] No window found`);
+                    closeGUIAndResume();
+                    return;
+                }
+
+                console.log(`[${new Date().toLocaleTimeString()}] [SELL] Shift-clicking items to sell GUI...`);
+                
+                let clickCount = 0;
+                
+                // In Mineflayer, when a GUI is open:
+                // window.inventoryStart is where the player's main inventory begins.
+                // window.inventoryStart + 27 is the first slot of the hotbar ("slot 1").
+                const startSlot = window.inventoryStart;
+                const endSlot = window.inventoryStart + 35; 
+                const protectedSlot = window.inventoryStart + 27; // The first hotbar slot
+                
+                // Loop through the player's inventory inside the GUI
+                for (let i = startSlot; i <= endSlot; i++) {
+                    // Skip the protected first hotbar slot
+                    if (i === protectedSlot) continue;
+                    
+                    // If there is an item in this slot
+                    if (window.slots[i]) {
+                        try {
+                            // clickWindow(slot, mouseButton, mode)
+                            // mode 1 = shift-click (instantly moves item into the sell GUI)
+                            await bot.clickWindow(i, 0, 1);
+                            clickCount++;
+                            
+                            // Wait 100ms between clicks so the server doesn't kick for packet spam
+                            await new Promise(resolve => setTimeout(resolve, 100)); 
+                        } catch (e) {
+                            // Silent
+                        }
+                    }
+                }
+
+                console.log(`[${new Date().toLocaleTimeString()}] [SELL] Successfully moved ${clickCount} item stacks`);
+
+                // Wait a brief moment for the server to process the last click, then close
+                setTimeout(() => {
+                    closeGUIAndResume();
+                }, 500);
+
+            } catch (e) {
+                console.error(`[ERROR] Error selling items: ${e.message}`);
+                closeGUIAndResume();
+            }
+        }
+
+        function closeGUIAndResume() {
+        try {
+            // Close the window
+            if (bot.currentWindow) {
+            bot.closeWindow(bot.currentWindow);
+            console.log(`[${new Date().toLocaleTimeString()}] [GUI] Closed sell GUI`);
+            }
+            
+            isInSellGUI = false;
+            inventoryFull = false;
+
+            // Resume farming after a short delay
+            setTimeout(() => {
+            startRightClick();
+            }, 500);
+
+        } catch (e) {
+            console.error(`[ERROR] Error closing window: ${e.message}`);
+        }
+    }
 
     bot.on('end', () => {
         entry.bot = null;
