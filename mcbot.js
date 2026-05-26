@@ -179,10 +179,10 @@ function spawnBot(id, botOptions, data, socket) {
         return;
     }
     const farmOffsets = [
-        {x: 0, z: 2},  // Up
-        {x: 0, z: -2}, // Down
-        {x: 2, z: 0},  // Right
-        {x: -2, z: 0}  // Left
+        {x: 70851.300, z: -2206.397},  // Up
+        {x: 70855.452, z: -2206.397}, // Down
+        {x: 70853.545, z: -2208.653},  // Right
+        {x: 70853.545, z: -2204.510}  // Left
     ];
     bot.setMaxListeners(0);
     let lastInventoryCount = -1;
@@ -245,7 +245,7 @@ function spawnBot(id, botOptions, data, socket) {
 
             for (const offset of farmOffsets) {
                 if (bot.username === 'dominance2') {
-                    const pos = bot.entity.position.floored().offset(offset.x, -2, offset.z);
+                    const pos = new Vec3(offset.x, 241, offset.z).floored();
                     const plantBlock = bot.blockAt(pos);
 
                     if (!plantBlock || plantBlock.name !== 'potatoes') continue;
@@ -280,9 +280,8 @@ function spawnBot(id, botOptions, data, socket) {
                 }
                 // MODE 2: Planting (everyone else)
                 else {
-                    const pos = bot.entity.position.floored().offset(offset.x, 0, offset.z);
+                    const pos = new Vec3(offset.x, 240, offset.z).floored();
                     const farmlandBlock = bot.blockAt(pos);
-
                     if (!farmlandBlock || farmlandBlock.name !== 'farmland') continue;
 
                     const plantPos = pos.offset(0, 1, 0);
