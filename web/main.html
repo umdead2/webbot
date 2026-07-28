@@ -8,45 +8,29 @@
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════════════════
-     SIDEBAR – Bot list + Add button
-════════════════════════════════════════════════════════════ -->
 <div id="sidebar">
     <div id="sidebar-header">
         <span class="sidebar-title">BOTS</span>
         <button id="btn-add-bot" title="Add new bot">＋</button>
     </div>
-    <div id="bot-tabs">
-        <!-- Bot tab items injected here -->
-    </div>
+    <div id="bot-tabs"></div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════
-     MAIN CONTENT – Bot panels (one per bot, only active shown)
-════════════════════════════════════════════════════════════ -->
 <div id="main">
-    <div id="no-bots-msg">
-        Click <strong>＋</strong> in the sidebar to add a bot.
-    </div>
-    <!-- Bot panels injected here -->
+    <div id="no-bots-msg">Click <strong>＋</strong> in the sidebar to add a bot.</div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════
-     ADD BOT MODAL
-════════════════════════════════════════════════════════════ -->
 <div id="modal-overlay" class="hidden">
     <div id="modal">
         <h3>New Bot</h3>
         <label>Label (nickname)</label>
-        <input type="text" id="modal-label" placeholder="e.g. Admin Watcher">
-
+        <input type="text" id="modal-label" placeholder="e.g. Bone Farmer">
         <label>Auth Type</label>
         <select id="modal-auth">
             <option value="offline">Offline / Cracked</option>
             <option value="microsoft">Microsoft (Java)</option>
             <option value="bedrock">Bedrock (via Floodgate)</option>
         </select>
-
         <div class="modal-buttons">
             <button id="modal-cancel" class="btn-disconnect">Cancel</button>
             <button id="modal-confirm" class="btn-launch">Create</button>
@@ -54,18 +38,139 @@
     </div>
 </div>
 
+<style>
+/* ── Module selector ────────────────────────────────────── */
+.module-card {
+    border: 1px solid #1a2a3a;
+    background: linear-gradient(135deg, #0a1520 0%, #111 100%);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+.module-card h3 { color: #4a9eff; margin: 0 0 12px; text-align: center; }
+.module-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 14px;
+}
+.module-btn {
+    padding: 7px 14px;
+    border-radius: 5px;
+    border: 1px solid #2a3a4a;
+    background: #0d1a26;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+.module-btn:hover { border-color: #4a9eff; color: #fff; }
+.module-btn.active {
+    background: #1a3a5a;
+    border-color: #4a9eff;
+    color: #4a9eff;
+    font-weight: bold;
+}
+
+/* ── Module config panels ───────────────────────────────── */
+.module-config { display: none; }
+.module-config.visible { display: block; }
+
+/* ── Spawner coords ─────────────────────────────────────── */
+.spawner-card {
+    border: 1px solid #2a4a2a;
+    background: #0a140a;
+    border-radius: 6px;
+    padding: 14px;
+    margin-top: 10px;
+}
+.spawner-card h4 { color: #4caf50; margin: 0 0 10px; text-align: center; font-size: 13px; }
+.coords-row { display: flex; gap: 10px; }
+.coord-field { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+.coord-field label { font-size: 11px; font-weight: bold; color: #4caf50; letter-spacing: 1px; }
+.coord-field input {
+    width: 100%; text-align: center;
+    background: #050d05; border: 1px solid #2a4a2a;
+    color: #eee; border-radius: 4px; padding: 6px 4px; font-size: 13px;
+    box-sizing: border-box;
+}
+.coord-field input:focus { outline: none; border-color: #4caf50; box-shadow: 0 0 5px rgba(76,175,80,0.3); }
+.coord-field input::-webkit-outer-spin-button,
+.coord-field input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.coord-field input[type=number] { -moz-appearance: textfield; }
+.coords-display { text-align: center; margin-top: 8px; font-size: 11px; color: #555; font-family: monospace; }
+.coords-display strong { color: #4caf50; }
+
+/* ── Elytra config ──────────────────────────────────────── */
+.elytra-card {
+    border: 1px solid #4a2a4a;
+    background: #140a14;
+    border-radius: 6px;
+    padding: 14px;
+    margin-top: 10px;
+}
+.elytra-card h4 { color: #c97ae8; margin: 0 0 10px; text-align: center; font-size: 13px; }
+.elytra-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.elytra-field { display: flex; flex-direction: column; gap: 4px; }
+.elytra-field label { font-size: 11px; font-weight: bold; color: #c97ae8; letter-spacing: 1px; }
+.elytra-field input {
+    text-align: center;
+    background: #0a050a; border: 1px solid #4a2a4a;
+    color: #eee; border-radius: 4px; padding: 6px 4px; font-size: 13px;
+}
+.elytra-field input:focus { outline: none; border-color: #c97ae8; box-shadow: 0 0 5px rgba(201,122,232,0.3); }
+.elytra-field input::-webkit-outer-spin-button,
+.elytra-field input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.elytra-field input[type=number] { -moz-appearance: textfield; }
+.elytra-hint { text-align: center; color: #555; font-size: 11px; margin: 8px 0 0; }
+
+/* ── Zigzag config ──────────────────────────────────────── */
+.zigzag-card {
+    border: 1px solid #2a4a4a;
+    background: #0a1414;
+    border-radius: 6px;
+    padding: 14px;
+    margin-top: 10px;
+}
+.zigzag-card h4 { color: #4ae8d0; margin: 0 0 10px; text-align: center; font-size: 13px; }
+.zigzag-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.zigzag-field { display: flex; flex-direction: column; gap: 4px; }
+.zigzag-field label { font-size: 11px; font-weight: bold; color: #4ae8d0; letter-spacing: 1px; }
+.zigzag-field input {
+    text-align: center;
+    background: #050f0f; border: 1px solid #2a4a4a;
+    color: #eee; border-radius: 4px; padding: 6px 4px; font-size: 13px;
+}
+.zigzag-field input:focus { outline: none; border-color: #4ae8d0; box-shadow: 0 0 5px rgba(74,232,208,0.3); }
+.zigzag-field input::-webkit-outer-spin-button,
+.zigzag-field input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.zigzag-field input[type=number] { -moz-appearance: textfield; }
+.zigzag-hint { text-align: center; color: #2a6a6a; font-size: 11px; margin: 8px 0 0; }
+.zigzag-computed { text-align: center; margin-top: 6px; font-size: 11px; color: #555; font-family: monospace; }
+.zigzag-computed strong { color: #4ae8d0; }
+
+/* ── Idle card ──────────────────────────────────────────── */
+.idle-msg { text-align: center; color: #555; font-size: 13px; padding: 10px 0; }
+</style>
+
 <script>
 const socket = io();
+let activeBotId = null;
+const botData = {};
 
-// ─── State ────────────────────────────────────────────────────────────────────
-let activeBotId = null;   // which tab is visible
-const botData   = {};     // botData[id] = { allPlayers: [], label, authType }
+// ── Module definitions ────────────────────────────────────────────────────────
+const MODULES = [
+    { id: 'none',          label: '⬜ Idle'          },
+    { id: 'spawnerLoot',   label: '💀 Spawner Loot'  },
+    { id: 'farming',       label: '🌾 Farming'        },
+    { id: 'elytraFlight',  label: '🦅 Elytra Flight'  },
+    { id: 'zigzagFlight',  label: '🪂 Zigzag Flight'  },
+];
 
-// ─── Sidebar helpers ──────────────────────────────────────────────────────────
 function addBotTab(id, label, authType) {
-    botData[id] = { allPlayers: [], label, authType };
+    botData[id] = { allPlayers: [], label, authType, module: 'none' };
 
-    // Sidebar tab
     const tab = document.createElement('div');
     tab.className = 'bot-tab';
     tab.id = `tab_${id}`;
@@ -77,7 +182,6 @@ function addBotTab(id, label, authType) {
     tab.addEventListener('click', () => switchBot(id));
     document.getElementById('bot-tabs').appendChild(tab);
 
-    // Main panel
     const panel = document.createElement('div');
     panel.className = 'bot-panel hidden';
     panel.id = `panel_${id}`;
@@ -95,12 +199,16 @@ function buildPanelHTML(id, label, authType) {
                <p>🔗 Microsoft Login Required:</p>
                <a id="ms-auth-link_${id}" href="#" target="_blank">Open login page</a>
                <span id="ms-auth-code_${id}" class="ms-code"></span>
-           </div>`
-        : '';
+           </div>` : '';
 
     const bedrockNote = authType === 'bedrock'
-        ? `<small style="color:#888;display:block;margin-top:4px;">Bedrock: username must start with <code>.</code> if using Floodgate.</small>`
-        : '';
+        ? `<small style="color:#888;display:block;margin-top:4px;">Bedrock: username must start with <code>.</code> if using Floodgate.</small>` : '';
+
+    const moduleBtns = MODULES.map(m =>
+        `<button class="module-btn${m.id === 'none' ? ' active' : ''}"
+            id="modbtn_${m.id}_${id}"
+            onclick="selectModule('${id}', '${m.id}')">${m.label}</button>`
+    ).join('');
 
     return `
     <div class="panel-header">
@@ -108,22 +216,19 @@ function buildPanelHTML(id, label, authType) {
         <span class="auth-badge auth-${authType}">${authType.toUpperCase()}</span>
     </div>
 
-    <!-- Online Players -->
     <div class="OnlinePlayers">
         <h3 style="text-align:center;">Online Players (<span id="player-count_${id}">0</span>)</h3>
         <div id="player-list_${id}" class="player-grid"></div>
     </div>
 
-    <!-- Bot Config -->
     <div class="card">
         <h3 style="text-align:center;">Bot Configuration</h3>
-        ${msAuthNotice}
-        ${bedrockNote}
+        ${msAuthNotice}${bedrockNote}
         <div class="input-group">
-            <input type="text" id="host_${id}" placeholder="Server IP" value="mcsmp.gg">
-            <input type="text" id="user_${id}" placeholder="Bot Username">
-            <input type="password" id="pass_${id}" placeholder="Password (for /login)">
-            <select id="version_${id}" title="Minecraft version">
+            <input type="text"     id="host_${id}"    placeholder="Server IP"         value="mcsmp.gg">
+            <input type="text"     id="user_${id}"    placeholder="Bot Username"       value="dominance1">
+            <input type="password" id="pass_${id}"    placeholder="Password (/login)">
+            <select id="version_${id}">
                 <option value="1.20.1">1.20.1</option>
                 <option value="1.19.4">1.19.4</option>
                 <option value="1.18.2">1.18.2</option>
@@ -133,11 +238,109 @@ function buildPanelHTML(id, label, authType) {
         </div>
         <div class="button-group">
             <button class="btn-launch" onclick="launchBot('${id}')">LAUNCH</button>
+            <button class="btn-disconnect" style="background:#552222;" onclick="abortModule('${id}')">ABORT MODULE</button>
             <button class="btn-disconnect" onclick="stopBot('${id}')">DISCONNECT</button>
         </div>
         <div class="status-bar">
             <span id="status-dot_${id}" class="status-dot offline"></span>
             Status: <span id="status-text_${id}">Disconnected</span>
+        </div>
+    </div>
+
+    <!-- Module Selector -->
+    <div class="module-card">
+        <h3>🧩 Module</h3>
+        <div class="module-tabs">${moduleBtns}</div>
+
+        <!-- none -->
+        <div class="module-config visible" id="modcfg_none_${id}">
+            <p class="idle-msg">Bot will connect and stand idle — no automation.</p>
+        </div>
+
+        <!-- spawnerLoot -->
+        <div class="module-config" id="modcfg_spawnerLoot_${id}">
+            <div class="spawner-card">
+                <h4>⚙ Spawner Block Coordinates</h4>
+                <div class="coords-row">
+                    <div class="coord-field">
+                        <label>X</label>
+                        <input type="number" id="sx_${id}" value="70868" oninput="updateSpawnerDisplay('${id}')">
+                    </div>
+                    <div class="coord-field">
+                        <label>Y</label>
+                        <input type="number" id="sy_${id}" value="249"   oninput="updateSpawnerDisplay('${id}')">
+                    </div>
+                    <div class="coord-field">
+                        <label>Z</label>
+                        <input type="number" id="sz_${id}" value="-2132" oninput="updateSpawnerDisplay('${id}')">
+                    </div>
+                </div>
+                <div class="coords-display" id="spawner-display_${id}">
+                    Spawner: <strong>70868, 249, -2132</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- farming -->
+        <div class="module-config" id="modcfg_farming_${id}">
+            <p class="idle-msg">🌾 Farming module — uses hardcoded farm offsets in farming.js.<br>No extra config needed.</p>
+        </div>
+
+        <!-- elytraFlight -->
+        <div class="module-config" id="modcfg_elytraFlight_${id}">
+            <div class="elytra-card">
+                <h4>🦅 Elytra Zigzag Route</h4>
+                <div class="elytra-grid">
+                    <div class="elytra-field">
+                        <label>START X</label>
+                        <input type="number" id="ex_start_${id}" value="0"    placeholder="0">
+                    </div>
+                    <div class="elytra-field">
+                        <label>START Z</label>
+                        <input type="number" id="ez_start_${id}" value="0"    placeholder="0">
+                    </div>
+                    <div class="elytra-field">
+                        <label>END X</label>
+                        <input type="number" id="ex_end_${id}"   value="1000" placeholder="1000">
+                    </div>
+                    <div class="elytra-field">
+                        <label>END Z</label>
+                        <input type="number" id="ez_end_${id}"   value="1000" placeholder="1000">
+                    </div>
+                    <div class="elytra-field" style="grid-column:span 2">
+                        <label>COLUMN STEP (X spacing)</label>
+                        <input type="number" id="ex_step_${id}"  value="100"  placeholder="100">
+                    </div>
+                </div>
+                <p class="elytra-hint">Bot zigzags columns every STEP blocks from Start X→End X, alternating Z.</p>
+            </div>
+        </div>
+
+        <!-- zigzagFlight -->
+        <div class="module-config" id="modcfg_zigzagFlight_${id}">
+            <div class="zigzag-card">
+                <h4>🪂 Infinite Cannon Zigzag</h4>
+                <div class="zigzag-grid">
+                    <div class="zigzag-field">
+                        <label>FIRST DEST X</label>
+                        <input type="number" id="zfx_first_${id}" value="74895" oninput="updateZigzagDisplay('${id}')">
+                    </div>
+                    <div class="zigzag-field">
+                        <label>FIRST DEST Z</label>
+                        <input type="number" id="zfz_first_${id}" value="25" oninput="updateZigzagDisplay('${id}')">
+                    </div>
+                    <div class="zigzag-field">
+                        <label>X LENGTH</label>
+                        <input type="number" id="zfx_len_${id}" value="-49776" oninput="updateZigzagDisplay('${id}')">
+                    </div>
+                    <div class="zigzag-field">
+                        <label>Z STEP</label>
+                        <input type="number" id="zfz_step_${id}" value="224">
+                    </div>
+                </div>
+                <div class="zigzag-computed" id="zigzag-display_${id}"></div>
+                <p class="zigzag-hint">Bot will zigzag indefinitely until ABORT is clicked.</p>
+            </div>
         </div>
     </div>
 
@@ -156,17 +359,15 @@ function buildPanelHTML(id, label, authType) {
                 <input type="text" id="player-search_${id}" placeholder="Search player..." autocomplete="off">
                 <div id="search-results_${id}" class="custom-dropdown"></div>
             </div>
-            <input type="text" id="time_${id}" placeholder="time">
-            <input type="text" id="reason_${id}" placeholder="reason">
+            <input type="text" id="time_${id}"    placeholder="time">
+            <input type="text" id="reason_${id}"  placeholder="reason">
             <input type="text" id="offense_${id}" placeholder="offense (2nd)">
             <button class="btn-send" onclick="sendToSelected('${id}')">SEND</button>
         </div>
     </div>
 
-    <!-- Console -->
     <div id="console_${id}" class="console"></div>
 
-    <!-- Chat Input -->
     <div class="card" style="margin-top:20px;">
         <div class="input-group">
             <input type="text" id="cmd_${id}" placeholder="Type a message or command..." style="flex:4;"
@@ -177,31 +378,132 @@ function buildPanelHTML(id, label, authType) {
     `;
 }
 
+// ── Module selector ───────────────────────────────────────────────────────────
+function selectModule(id, mod) {
+    botData[id].module = mod;
+    MODULES.forEach(m => {
+        const btn = document.getElementById(`modbtn_${m.id}_${id}`);
+        if (btn) btn.classList.toggle('active', m.id === mod);
+        const cfg = document.getElementById(`modcfg_${m.id}_${id}`);
+        if (cfg) cfg.classList.toggle('visible', m.id === mod);
+    });
+}
+
+function updateSpawnerDisplay(id) {
+    const x = document.getElementById(`sx_${id}`)?.value || '?';
+    const y = document.getElementById(`sy_${id}`)?.value || '?';
+    const z = document.getElementById(`sz_${id}`)?.value || '?';
+    const el = document.getElementById(`spawner-display_${id}`);
+    if (el) el.innerHTML = `Spawner: <strong>${x}, ${y}, ${z}</strong>`;
+}
+
+function updateZigzagDisplay(id) {
+    const firstX  = parseInt(document.getElementById(`zfx_first_${id}`)?.value) || 0;
+    const firstZ  = parseInt(document.getElementById(`zfz_first_${id}`)?.value) || 0;
+    const xLen    = parseInt(document.getElementById(`zfx_len_${id}`)?.value)   || 0;
+    const returnX = firstX + xLen;
+    const el = document.getElementById(`zigzag-display_${id}`);
+    if (el) el.innerHTML =
+        `First dest: <strong>X ${firstX}, Z ${firstZ}</strong> &nbsp;·&nbsp; Return X: <strong>${returnX}</strong>`;
+}
+
+function abortModule(id) {
+    socket.emit('stop_module', { id });
+    appendConsole(id, '[SYSTEM] Abort signal sent.');
+}
+
+// ── Bot actions ───────────────────────────────────────────────────────────────
+function launchBot(id) {
+    const mod = botData[id]?.module || 'none';
+
+    const data = {
+        id,
+        host:     document.getElementById(`host_${id}`).value,
+        username: document.getElementById(`user_${id}`).value,
+        password: document.getElementById(`pass_${id}`).value,
+        version:  document.getElementById(`version_${id}`).value,
+        authType: botData[id]?.authType || 'offline',
+        label:    botData[id]?.label,
+        module:   mod,
+    };
+
+    if (!data.username) { alert('Please enter a username.'); return; }
+
+    if (mod === 'spawnerLoot') {
+        data.spawnerX = parseInt(document.getElementById(`sx_${id}`)?.value) || 0;
+        data.spawnerY = parseInt(document.getElementById(`sy_${id}`)?.value) || 0;
+        data.spawnerZ = parseInt(document.getElementById(`sz_${id}`)?.value) || 0;
+    }
+
+    if (mod === 'elytraFlight') {
+        data.elytraStartX = parseInt(document.getElementById(`ex_start_${id}`)?.value) || 0;
+        data.elytraStartZ = parseInt(document.getElementById(`ez_start_${id}`)?.value) || 0;
+        data.elytraEndX   = parseInt(document.getElementById(`ex_end_${id}`)?.value)   || 1000;
+        data.elytraEndZ   = parseInt(document.getElementById(`ez_end_${id}`)?.value)   || 1000;
+        data.elytraStepX  = parseInt(document.getElementById(`ex_step_${id}`)?.value)  || 100;
+    }
+
+    if (mod === 'zigzagFlight') {
+        data.zigFirstX  = parseInt(document.getElementById(`zfx_first_${id}`)?.value);
+        data.zigFirstZ  = parseInt(document.getElementById(`zfz_first_${id}`)?.value);
+        data.zigXLength = parseInt(document.getElementById(`zfx_len_${id}`)?.value);
+        data.zigZStep   = parseInt(document.getElementById(`zfz_step_${id}`)?.value);
+    }
+
+    appendConsole(id, `[SYSTEM] Launching with module: ${mod}`);
+    socket.emit('start_bot', data);
+}
+
+function stopBot(id)  { socket.emit('stop_bot',   { id }); }
+function removeBot(id, e) { e.stopPropagation(); socket.emit('remove_bot', { id }); }
+
+function sendCmd(id) {
+    const input = document.getElementById(`cmd_${id}`);
+    if (input.value.trim()) {
+        socket.emit('command_from_web', { id, cmd: input.value });
+        input.value = '';
+    }
+}
+
+function sendToSelected(id) {
+    const player  = document.getElementById(`player-search_${id}`).value.trim();
+    const command = document.getElementById(`commands_${id}`).value;
+    const time    = document.getElementById(`time_${id}`).value.trim();
+    const reason  = document.getElementById(`reason_${id}`).value.trim();
+    const offense = document.getElementById(`offense_${id}`).value.trim();
+    if (!player) { alert('You must select a player first!'); return; }
+    socket.emit('command_from_web', { id, cmd: `${command}${player} ${time} ${reason} ${offense}`.trim() });
+    ['player-search', 'time', 'reason', 'offense'].forEach(f => {
+        const el = document.getElementById(`${f}_${id}`);
+        if (el) el.value = '';
+    });
+    document.getElementById(`search-results_${id}`).style.display = 'none';
+}
+
 function switchBot(id) {
     activeBotId = id;
     document.querySelectorAll('.bot-panel').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('.bot-tab').forEach(t => t.classList.remove('active'));
-    const panel = document.getElementById(`panel_${id}`);
-    const tab   = document.getElementById(`tab_${id}`);
-    if (panel) panel.classList.remove('hidden');
-    if (tab)   tab.classList.add('active');
+    document.getElementById(`panel_${id}`)?.classList.remove('hidden');
+    document.getElementById(`tab_${id}`)?.classList.add('active');
 }
 
-function removeBot(id, e) {
-    e.stopPropagation();
-    socket.emit('remove_bot', { id });
+function appendConsole(id, msg) {
+    const c = document.getElementById(`console_${id}`);
+    if (!c) return;
+    const line = document.createElement('div');
+    line.textContent = msg;
+    c.appendChild(line);
+    c.scrollTop = c.scrollHeight;
 }
 
-// ─── Wire per-panel search dropdown ──────────────────────────────────────────
 function wirePanel(id) {
     const searchInput = document.getElementById(`player-search_${id}`);
     const resultsDiv  = document.getElementById(`search-results_${id}`);
-
     searchInput.addEventListener('input', () => {
         const val = searchInput.value.toLowerCase();
         resultsDiv.innerHTML = '';
         if (!val) { resultsDiv.style.display = 'none'; return; }
-
         const matches = (botData[id]?.allPlayers || []).filter(p => p.toLowerCase().includes(val));
         if (matches.length > 0) {
             resultsDiv.style.display = 'block';
@@ -218,140 +520,56 @@ function wirePanel(id) {
     });
 }
 
-// ─── Bot actions ──────────────────────────────────────────────────────────────
-function launchBot(id) {
-    const data = {
-        id,
-        host:     document.getElementById(`host_${id}`).value,
-        username: document.getElementById(`user_${id}`).value,
-        password: document.getElementById(`pass_${id}`).value,
-        version:  document.getElementById(`version_${id}`).value,
-        authType: botData[id]?.authType || 'offline',
-        label:    botData[id]?.label,
-    };
-
-    if (!data.username) { alert('Please enter a username.'); return; }
-
-    appendConsole(id, '[SYSTEM] Starting bot connection...');
-    socket.emit('start_bot', data);
-}
-
-function stopBot(id) {
-    socket.emit('stop_bot', { id });
-}
-
-function sendCmd(id) {
-    const input = document.getElementById(`cmd_${id}`);
-    if (input.value.trim()) {
-        socket.emit('command_from_web', { id, cmd: input.value });
-        input.value = '';
-    }
-}
-
-function sendToSelected(id) {
-    const player  = document.getElementById(`player-search_${id}`).value.trim();
-    const command = document.getElementById(`commands_${id}`).value;
-    const time    = document.getElementById(`time_${id}`).value.trim();
-    const reason  = document.getElementById(`reason_${id}`).value.trim();
-    const offense = document.getElementById(`offense_${id}`).value.trim();
-
-    if (!player) { alert('You must select a player first!'); return; }
-
-    const finalCmd = `${command}${player} ${time} ${reason} ${offense}`.trim();
-    socket.emit('command_from_web', { id, cmd: finalCmd });
-
-    document.getElementById(`player-search_${id}`).value = '';
-    document.getElementById(`time_${id}`).value = '';
-    document.getElementById(`reason_${id}`).value = '';
-    document.getElementById(`offense_${id}`).value = '';
-    document.getElementById(`search-results_${id}`).style.display = 'none';
-}
-
-function appendConsole(id, msg) {
-    const c = document.getElementById(`console_${id}`);
-    if (!c) return;
-    const line = document.createElement('div');
-    line.textContent = msg;
-    c.appendChild(line);
-    c.scrollTop = c.scrollHeight;
-}
-
-// ─── Socket events ────────────────────────────────────────────────────────────
-
-// Full list of bots on reconnect
-socket.on('bot_list', (list) => {
-    list.forEach(({ id, label, authType }) => {
-        if (!botData[id]) addBotTab(id, label, authType);
-    });
-});
-
-socket.on('bot_added', ({ id, label, authType }) => {
-    if (!botData[id]) addBotTab(id, label, authType);
-});
-
+// ── Socket events ─────────────────────────────────────────────────────────────
+socket.on('bot_list',  (list) => list.forEach(({ id, label, authType }) => { if (!botData[id]) addBotTab(id, label, authType); }));
+socket.on('bot_added', ({ id, label, authType }) => { if (!botData[id]) addBotTab(id, label, authType); });
 socket.on('bot_removed', ({ id }) => {
     delete botData[id];
     document.getElementById(`tab_${id}`)?.remove();
     document.getElementById(`panel_${id}`)?.remove();
-
     const remaining = Object.keys(botData);
-    if (remaining.length === 0) {
-        activeBotId = null;
-        document.getElementById('no-bots-msg').classList.remove('hidden');
-    } else {
-        switchBot(remaining[0]);
-    }
+    if (remaining.length === 0) { activeBotId = null; document.getElementById('no-bots-msg').classList.remove('hidden'); }
+    else switchBot(remaining[0]);
 });
 
-// Dynamic per-bot socket listeners (set up once per bot id)
 const subscribedIds = new Set();
 function subscribeToBot(id) {
     if (subscribedIds.has(id)) return;
     subscribedIds.add(id);
 
     socket.on(`bot_status_${id}`, (status) => {
-        const txt = document.getElementById(`status-text_${id}`);
-        const dot = document.getElementById(`status-dot_${id}`);
+        const txt    = document.getElementById(`status-text_${id}`);
+        const dot    = document.getElementById(`status-dot_${id}`);
         const tabDot = document.getElementById(`dot_${id}`);
         if (txt) txt.innerText = status;
         const online = status.includes('Active') || status.includes('Limbo') || status.includes('Loaded');
-        [dot, tabDot].forEach(d => {
-            if (!d) return;
-            d.className = 'status-dot ' + (online ? 'online' : 'offline');
-        });
+        [dot, tabDot].forEach(d => { if (d) d.className = 'status-dot ' + (online ? 'online' : 'offline'); });
     });
 
-    socket.on(`bot_chat_${id}`, (msg) => appendConsole(id, msg));
-
+    socket.on(`bot_chat_${id}`,    (msg)     => appendConsole(id, msg));
     socket.on(`player_list_${id}`, (players) => {
         if (!botData[id]) return;
         botData[id].allPlayers = players;
         const countEl = document.getElementById(`player-count_${id}`);
         const listEl  = document.getElementById(`player-list_${id}`);
         if (countEl) countEl.innerText = players.length;
-        if (listEl)  listEl.innerHTML = players.map(n => `<div>${n}</div>`).join('');
+        if (listEl)  listEl.innerHTML  = players.map(n => `<div>${n}</div>`).join('');
     });
 
     socket.on(`ms_auth_${id}`, ({ url, code }) => {
-        const box  = document.getElementById(`ms-auth-box_${id}`);
-        const link = document.getElementById(`ms-auth-link_${id}`);
+        const box    = document.getElementById(`ms-auth-box_${id}`);
+        const link   = document.getElementById(`ms-auth-link_${id}`);
         const codeEl = document.getElementById(`ms-auth-code_${id}`);
         if (!box) return;
         box.classList.remove('hidden');
-        link.href = url;
-        link.textContent = url;
+        link.href = url; link.textContent = url;
         if (codeEl) codeEl.textContent = `Code: ${code}`;
     });
 }
 
-// ─── Modal ────────────────────────────────────────────────────────────────────
-document.getElementById('btn-add-bot').addEventListener('click', () => {
-    document.getElementById('modal-overlay').classList.remove('hidden');
-});
-document.getElementById('modal-cancel').addEventListener('click', () => {
-    document.getElementById('modal-overlay').classList.add('hidden');
-});
-document.getElementById('modal-confirm').addEventListener('click', () => {
+document.getElementById('btn-add-bot').addEventListener('click',   () => document.getElementById('modal-overlay').classList.remove('hidden'));
+document.getElementById('modal-cancel').addEventListener('click',   () => document.getElementById('modal-overlay').classList.add('hidden'));
+document.getElementById('modal-confirm').addEventListener('click',  () => {
     const label    = document.getElementById('modal-label').value.trim() || 'New Bot';
     const authType = document.getElementById('modal-auth').value;
     socket.emit('create_bot', { label, authType });
@@ -359,15 +577,12 @@ document.getElementById('modal-confirm').addEventListener('click', () => {
     document.getElementById('modal-label').value = '';
 });
 
-// When bot_added fires, subscribe to its channels
 socket.on('bot_added', ({ id }) => subscribeToBot(id));
-socket.on('bot_list',  (list) => list.forEach(b => subscribeToBot(b.id)));
+socket.on('bot_list',  (list)  => list.forEach(b => subscribeToBot(b.id)));
 
-// Close dropdown on outside click
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.search-wrapper')) {
+    if (!e.target.closest('.search-wrapper'))
         document.querySelectorAll('.custom-dropdown').forEach(d => d.style.display = 'none');
-    }
 });
 </script>
 </body>

@@ -1,8 +1,11 @@
 {
   "dependencies": {
     "express": "^5.2.1",
-    "mineflayer": "^4.37.0",
+    "minecraft-protocol": "^1.66.2",
+    "mineflayer": "^4.37.1",
+    "mineflayer-pathfinder": "^2.4.5",
     "prismarine-auth": "^3.1.1",
+    "prismarine-provider-anvil": "^2.13.0",
     "socket.io": "^4.8.3"
   }
 }
