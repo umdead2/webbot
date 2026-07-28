@@ -9,22 +9,47 @@ const farmOffsets = [
 
 function setupFarming(bot, id, io, emitStatus) {
     let lastInventoryCount = -1;
-    let isDigging = false; 
+    let isDigging = false;
     let isPlacing = false;
     let isRightClicking = false;
+    let isEating = false;
     let rightClickInterval = null;
     let inventoryFull = false;
     let isInSellGUI = false;
+
+    async function eatIfHungry(bot) {
+        if (bot.food === undefined || bot.food > 5) return;
+        if (isEating) return;
+
+        const goldenApple = bot.inventory.items().find(item =>
+            item.name === 'golden_apple' || item.name === 'enchanted_golden_apple'
+        );
+
+        if (!goldenApple) return;
+
+        try {
+            isEating = true;
+            await bot.equip(goldenApple, 'hand');
+            await bot.consume();
+            console.log(`[${new Date().toLocaleTimeString()}] [FOOD] Ate ${goldenApple.name} (hunger was ${bot.food})`);
+        } catch (err) {
+            console.log(`[FOOD] Failed to eat:`, err.message);
+        } finally {
+            isEating = false;
+        }
+    }
 
     function startRightClick() {
         console.log(`[DEBUG] startRightClick called - isRightClicking: ${isRightClicking}`);
         if (isRightClicking) return;
         isRightClicking = true;
-        
+
         console.log(`[${new Date().toLocaleTimeString()}] [FARM] Mode: ${bot.username === 'dominance2' ? 'DIGGING' : 'PLANTING'}`);
-        
+
         rightClickInterval = setInterval(async () => {
             if (!isRightClicking || isInSellGUI) return;
+
+            await eatIfHungry(bot);
 
             for (const offset of farmOffsets) {
                 if (bot.username === 'jeffman3') {
@@ -33,7 +58,6 @@ function setupFarming(bot, id, io, emitStatus) {
                     if (!plantBlock || plantBlock.name !== 'potatoes') continue;
 
                     const props = plantBlock.getProperties();
-
                     if (props.age < 7) continue;
 
                     if (!isDigging) {
@@ -106,11 +130,11 @@ function setupFarming(bot, id, io, emitStatus) {
 
     function checkInventory() {
         const emptySlots = bot.inventory.emptySlotCount();
-        
+
         if (emptySlots === 0 && !inventoryFull) {
             inventoryFull = true;
             console.log(`[${new Date().toLocaleTimeString()}] [INVENTORY] Inventory full! Stopping farm and opening sell GUI...`);
-            
+
             stopRightClick();
 
             setTimeout(() => {
@@ -127,7 +151,7 @@ function setupFarming(bot, id, io, emitStatus) {
                 bot.closeWindow(bot.currentWindow);
                 console.log(`[${new Date().toLocaleTimeString()}] [GUI] Closed sell GUI`);
             }
-            
+
             isInSellGUI = false;
             inventoryFull = false;
 
@@ -143,7 +167,7 @@ function setupFarming(bot, id, io, emitStatus) {
     async function sellAllItems() {
         try {
             const window = bot.currentWindow;
-            
+
             if (!window) {
                 console.log(`[${new Date().toLocaleTimeString()}] [ERROR] No window found`);
                 closeGUIAndResume();
@@ -151,22 +175,22 @@ function setupFarming(bot, id, io, emitStatus) {
             }
 
             console.log(`[${new Date().toLocaleTimeString()}] [SELL] Shift-clicking items to sell GUI...`);
-            
+
             let clickCount = 0;
-            
+
             const startSlot = window.inventoryStart;
-            const endSlot = window.inventoryStart + 35; 
+            const endSlot = window.inventoryStart + 35;
             const protectedSlot = window.inventoryStart + 27;
-            
+
             for (let i = startSlot; i <= endSlot; i++) {
                 if (i === protectedSlot) continue;
-                
+
                 if (window.slots[i]) {
                     try {
                         await bot.clickWindow(i, 0, 1);
                         clickCount++;
-                        
-                        await new Promise(resolve => setTimeout(resolve, 100)); 
+
+                        await new Promise(resolve => setTimeout(resolve, 100));
                     } catch (e) {
                         // Silent
                     }
@@ -202,15 +226,15 @@ function setupFarming(bot, id, io, emitStatus) {
     bot.on('windowOpen', (window) => {
         if (isInSellGUI) {
             console.log(`[${new Date().toLocaleTimeString()}] [GUI] Sell GUI opened - selling items...`);
-            
+
             setTimeout(() => {
                 sellAllItems();
             }, 500);
         }
     });
 
-    return { 
-        startRightClick, 
+    return {
+        startRightClick,
         stopRightClick,
         inventoryCheckInterval
     };
