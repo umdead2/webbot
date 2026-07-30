@@ -2,3 +2,4 @@ node_modules/
 package-lock.json
 mcbot copy.js
 .env
+downloads
