@@ -284,7 +284,6 @@ function spawnBot(id, botOptions, data, socket) {
                         lastLog = now;
                         if (bot.entity) {
                             const yPos = Math.floor(bot.entity.position.y);
-                            console.log(`[Bot ID: ${id}] Current Y-Position: ${yPos}`);
                         }
                     }
                 };

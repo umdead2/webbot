@@ -1,10 +1,10 @@
 const { Vec3 } = require('vec3');
 
 const farmOffsets = [
-    {x: 2241.500, z: -2079.500},
-    {x: 2241.500, z: -2075.500},
-    {x: 2239.500, z: -2077.500},
-    {x: 2243.500, z: -2077.500}
+    {x: 31445.500, z: 38220.500},
+    {x: 31445.500, z: 38216.500},
+    {x: 31443.500, z: 38218.500},
+    {x: 31447.500, z: 38218.500}
 ];
 
 function setupFarming(bot, id, io, emitStatus) {
@@ -53,7 +53,7 @@ function setupFarming(bot, id, io, emitStatus) {
 
             for (const offset of farmOffsets) {
                 if (bot.username === 'jeffman3') {
-                    const pos = new Vec3(offset.x, -44, offset.z).floored();
+                    const pos = new Vec3(offset.x, -32, offset.z).floored();
                     const plantBlock = bot.blockAt(pos);
                     if (!plantBlock || plantBlock.name !== 'potatoes') continue;
 
@@ -85,7 +85,7 @@ function setupFarming(bot, id, io, emitStatus) {
                     }
                 }
                 else {
-                    const pos = new Vec3(offset.x, -45, offset.z).floored();
+                    const pos = new Vec3(offset.x, -33, offset.z).floored();
                     const farmlandBlock = bot.blockAt(pos);
                     if (!farmlandBlock || farmlandBlock.name !== 'farmland') continue;
 
