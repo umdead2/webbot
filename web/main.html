@@ -2,12 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>MC Bot Panel</title>
     <script src="/socket.io/socket.io.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<button id="btn-menu-toggle" title="Show bots">☰</button>
+<div id="sidebar-scrim"></div>
 <div id="sidebar">
     <div id="sidebar-header">
         <span class="sidebar-title">BOTS</span>
@@ -159,6 +162,80 @@ const socket = io();
 let activeBotId = null;
 const botData = {};
 
+// ── Local persistence (per-browser, cracked accounts only, no encryption) ─────
+// Each bot gets a permanent random localId the moment it's created, and every
+// saved profile is keyed by that localId (NOT by label) -- this is what lets
+// multiple bots with the same/default name save independently instead of
+// clobbering each other.
+const STORAGE_KEY = 'mcbot_profiles';
+
+function generateLocalId() {
+    if (window.crypto?.randomUUID) return crypto.randomUUID();
+    return 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+}
+function loadProfiles() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+    catch (e) { return {}; }
+}
+function saveProfiles(profiles) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles)); }
+    catch (e) { console.warn('Could not save bot profiles:', e); }
+}
+function findLocalIdByLabel(label) {
+    const profiles = loadProfiles();
+    for (const [lid, p] of Object.entries(profiles)) if (p.label === label) return lid;
+    return null;
+}
+function saveProfileFor(id) {
+    const bd = botData[id];
+    if (!bd || !bd.localId) return;
+    const profiles = loadProfiles();
+    const profile = {
+        label:    bd.label,
+        authType: bd.authType,
+        module:   bd.module || 'none',
+        host:     document.getElementById(`host_${id}`)?.value || '',
+        username: document.getElementById(`user_${id}`)?.value || '',
+        password: document.getElementById(`pass_${id}`)?.value || '',
+        version:  document.getElementById(`version_${id}`)?.value || '1.20.1',
+        moduleConfig: {}
+    };
+    // module-specific fields, saved regardless of which is active
+    ['sx','sy','sz'].forEach(f => { const el = document.getElementById(`${f}_${id}`); if (el) profile.moduleConfig[f] = el.value; });
+    ['ex_start','ez_start','ex_end','ez_end','ex_step'].forEach(f => { const el = document.getElementById(`${f}_${id}`); if (el) profile.moduleConfig[f] = el.value; });
+    ['zfx_first','zfz_first','zfx_len','zfz_step'].forEach(f => { const el = document.getElementById(`${f}_${id}`); if (el) profile.moduleConfig[f] = el.value; });
+    profiles[bd.localId] = profile;
+    saveProfiles(profiles);
+}
+function restoreProfileFor(id, localId) {
+    const profiles = loadProfiles();
+    const profile = profiles[localId];
+    if (!profile) return;
+
+    const setVal = (fieldId, val) => { const el = document.getElementById(fieldId); if (el && val !== undefined) el.value = val; };
+    setVal(`host_${id}`, profile.host);
+    setVal(`user_${id}`, profile.username);
+    setVal(`pass_${id}`, profile.password);
+    setVal(`version_${id}`, profile.version);
+
+    if (profile.moduleConfig) {
+        Object.entries(profile.moduleConfig).forEach(([f, v]) => setVal(`${f}_${id}`, v));
+    }
+    if (profile.module) selectModule(id, profile.module);
+    updateSpawnerDisplay(id);
+    updateZigzagDisplay(id);
+}
+function deleteProfile(localId) {
+    if (!localId) return;
+    const profiles = loadProfiles();
+    delete profiles[localId];
+    saveProfiles(profiles);
+}
+
+// Queue used to match this browser's "create_bot" requests back up with the
+// server's "bot_added" replies, since the server doesn't know about localIds.
+const pendingCreateQueue = [];
+
 // ── Module definitions ────────────────────────────────────────────────────────
 const MODULES = [
     { id: 'none',          label: '⬜ Idle'          },
@@ -168,8 +245,9 @@ const MODULES = [
     { id: 'zigzagFlight',  label: '🪂 Zigzag Flight'  },
 ];
 
-function addBotTab(id, label, authType) {
-    botData[id] = { allPlayers: [], label, authType, module: 'none' };
+function addBotTab(id, label, authType, localId) {
+    if (!localId) localId = findLocalIdByLabel(label) || generateLocalId();
+    botData[id] = { allPlayers: [], label, authType, module: 'none', localId };
 
     const tab = document.createElement('div');
     tab.className = 'bot-tab';
@@ -179,7 +257,7 @@ function addBotTab(id, label, authType) {
         <span class="tab-label">${label}</span>
         <button class="tab-remove" title="Remove bot" onclick="removeBot('${id}', event)">✕</button>
     `;
-    tab.addEventListener('click', () => switchBot(id));
+    tab.addEventListener('click', () => { switchBot(id); closeSidebarOnMobile(); });
     document.getElementById('bot-tabs').appendChild(tab);
 
     const panel = document.createElement('div');
@@ -191,6 +269,9 @@ function addBotTab(id, label, authType) {
     document.getElementById('no-bots-msg').classList.add('hidden');
     switchBot(id);
     wirePanel(id);
+    restoreProfileFor(id, localId);
+    // Make sure this bot is saved right away, even if the user never edits a field.
+    if (!loadProfiles()[localId]) saveProfileFor(id);
 }
 
 function buildPanelHTML(id, label, authType) {
@@ -225,10 +306,10 @@ function buildPanelHTML(id, label, authType) {
         <h3 style="text-align:center;">Bot Configuration</h3>
         ${msAuthNotice}${bedrockNote}
         <div class="input-group">
-            <input type="text"     id="host_${id}"    placeholder="Server IP"         value="mcsmp.gg">
-            <input type="text"     id="user_${id}"    placeholder="Bot Username"       value="dominance1">
-            <input type="password" id="pass_${id}"    placeholder="Password (/login)">
-            <select id="version_${id}">
+            <input type="text"     id="host_${id}"    placeholder="Server IP"         value="mcsmp.gg" oninput="saveProfileFor('${id}')">
+            <input type="text"     id="user_${id}"    placeholder="Bot Username"       value="dominance1" oninput="saveProfileFor('${id}')">
+            <input type="password" id="pass_${id}"    placeholder="Password (/login)" oninput="saveProfileFor('${id}')">
+            <select id="version_${id}" onchange="saveProfileFor('${id}')">
                 <option value="1.20.1">1.20.1</option>
                 <option value="1.19.4">1.19.4</option>
                 <option value="1.18.2">1.18.2</option>
@@ -264,15 +345,15 @@ function buildPanelHTML(id, label, authType) {
                 <div class="coords-row">
                     <div class="coord-field">
                         <label>X</label>
-                        <input type="number" id="sx_${id}" value="70868" oninput="updateSpawnerDisplay('${id}')">
+                        <input type="number" id="sx_${id}" value="70868" oninput="updateSpawnerDisplay('${id}'); saveProfileFor('${id}')">
                     </div>
                     <div class="coord-field">
                         <label>Y</label>
-                        <input type="number" id="sy_${id}" value="249"   oninput="updateSpawnerDisplay('${id}')">
+                        <input type="number" id="sy_${id}" value="249"   oninput="updateSpawnerDisplay('${id}'); saveProfileFor('${id}')">
                     </div>
                     <div class="coord-field">
                         <label>Z</label>
-                        <input type="number" id="sz_${id}" value="-2132" oninput="updateSpawnerDisplay('${id}')">
+                        <input type="number" id="sz_${id}" value="-2132" oninput="updateSpawnerDisplay('${id}'); saveProfileFor('${id}')">
                     </div>
                 </div>
                 <div class="coords-display" id="spawner-display_${id}">
@@ -293,23 +374,23 @@ function buildPanelHTML(id, label, authType) {
                 <div class="elytra-grid">
                     <div class="elytra-field">
                         <label>START X</label>
-                        <input type="number" id="ex_start_${id}" value="0"    placeholder="0">
+                        <input type="number" id="ex_start_${id}" value="0"    placeholder="0" oninput="saveProfileFor('${id}')">
                     </div>
                     <div class="elytra-field">
                         <label>START Z</label>
-                        <input type="number" id="ez_start_${id}" value="0"    placeholder="0">
+                        <input type="number" id="ez_start_${id}" value="0"    placeholder="0" oninput="saveProfileFor('${id}')">
                     </div>
                     <div class="elytra-field">
                         <label>END X</label>
-                        <input type="number" id="ex_end_${id}"   value="1000" placeholder="1000">
+                        <input type="number" id="ex_end_${id}"   value="1000" placeholder="1000" oninput="saveProfileFor('${id}')">
                     </div>
                     <div class="elytra-field">
                         <label>END Z</label>
-                        <input type="number" id="ez_end_${id}"   value="1000" placeholder="1000">
+                        <input type="number" id="ez_end_${id}"   value="1000" placeholder="1000" oninput="saveProfileFor('${id}')">
                     </div>
                     <div class="elytra-field" style="grid-column:span 2">
                         <label>COLUMN STEP (X spacing)</label>
-                        <input type="number" id="ex_step_${id}"  value="100"  placeholder="100">
+                        <input type="number" id="ex_step_${id}"  value="100"  placeholder="100" oninput="saveProfileFor('${id}')">
                     </div>
                 </div>
                 <p class="elytra-hint">Bot zigzags columns every STEP blocks from Start X→End X, alternating Z.</p>
@@ -323,19 +404,19 @@ function buildPanelHTML(id, label, authType) {
                 <div class="zigzag-grid">
                     <div class="zigzag-field">
                         <label>FIRST DEST X</label>
-                        <input type="number" id="zfx_first_${id}" value="74895" oninput="updateZigzagDisplay('${id}')">
+                        <input type="number" id="zfx_first_${id}" value="74895" oninput="updateZigzagDisplay('${id}'); saveProfileFor('${id}')">
                     </div>
                     <div class="zigzag-field">
                         <label>FIRST DEST Z</label>
-                        <input type="number" id="zfz_first_${id}" value="25" oninput="updateZigzagDisplay('${id}')">
+                        <input type="number" id="zfz_first_${id}" value="25" oninput="updateZigzagDisplay('${id}'); saveProfileFor('${id}')">
                     </div>
                     <div class="zigzag-field">
                         <label>X LENGTH</label>
-                        <input type="number" id="zfx_len_${id}" value="-49776" oninput="updateZigzagDisplay('${id}')">
+                        <input type="number" id="zfx_len_${id}" value="-49776" oninput="updateZigzagDisplay('${id}'); saveProfileFor('${id}')">
                     </div>
                     <div class="zigzag-field">
                         <label>Z STEP</label>
-                        <input type="number" id="zfz_step_${id}" value="224">
+                        <input type="number" id="zfz_step_${id}" value="224" oninput="saveProfileFor('${id}')">
                     </div>
                 </div>
                 <div class="zigzag-computed" id="zigzag-display_${id}"></div>
@@ -387,6 +468,7 @@ function selectModule(id, mod) {
         const cfg = document.getElementById(`modcfg_${m.id}_${id}`);
         if (cfg) cfg.classList.toggle('visible', m.id === mod);
     });
+    saveProfileFor(id);
 }
 
 function updateSpawnerDisplay(id) {
@@ -450,12 +532,20 @@ function launchBot(id) {
         data.zigZStep   = parseInt(document.getElementById(`zfz_step_${id}`)?.value);
     }
 
+    saveProfileFor(id);
     appendConsole(id, `[SYSTEM] Launching with module: ${mod}`);
     socket.emit('start_bot', data);
 }
 
 function stopBot(id)  { socket.emit('stop_bot',   { id }); }
-function removeBot(id, e) { e.stopPropagation(); socket.emit('remove_bot', { id }); }
+function removeBot(id, e) {
+    e.stopPropagation();
+    const bd = botData[id];
+    if (bd && confirm(`Remove "${bd.label}" permanently? This also deletes its saved config.`)) {
+        deleteProfile(bd.localId);
+        socket.emit('remove_bot', { id });
+    }
+}
 
 function sendCmd(id) {
     const input = document.getElementById(`cmd_${id}`);
@@ -520,9 +610,32 @@ function wirePanel(id) {
     });
 }
 
+// ── Mobile sidebar helpers ──────────────────────────────────────────────────
+function setSidebarOpen(open) {
+    document.getElementById('sidebar')?.classList.toggle('open', open);
+    document.getElementById('sidebar-scrim')?.classList.toggle('visible', open);
+}
+function closeSidebarOnMobile() {
+    if (window.innerWidth <= 760) setSidebarOpen(false);
+}
+
 // ── Socket events ─────────────────────────────────────────────────────────────
-socket.on('bot_list',  (list) => list.forEach(({ id, label, authType }) => { if (!botData[id]) addBotTab(id, label, authType); }));
-socket.on('bot_added', ({ id, label, authType }) => { if (!botData[id]) addBotTab(id, label, authType); });
+let liveListReceived = false;
+
+socket.on('bot_list',  (list) => {
+    list.forEach(({ id, label, authType }) => { if (!botData[id]) addBotTab(id, label, authType, findLocalIdByLabel(label)); });
+    liveListReceived = true;
+    replayMissingSavedBots(list.map(b => b.label));
+});
+socket.on('bot_added', (payload) => {
+    const { id, label, authType } = payload;
+    if (botData[id]) return;
+    let localId = payload.localId;
+    if (!localId && pendingCreateQueue.length) localId = pendingCreateQueue.shift().localId;
+    if (!localId) localId = findLocalIdByLabel(label) || generateLocalId();
+    addBotTab(id, label, authType, localId);
+    subscribeToBot(id);
+});
 socket.on('bot_removed', ({ id }) => {
     delete botData[id];
     document.getElementById(`tab_${id}`)?.remove();
@@ -531,6 +644,21 @@ socket.on('bot_removed', ({ id }) => {
     if (remaining.length === 0) { activeBotId = null; document.getElementById('no-bots-msg').classList.remove('hidden'); }
     else switchBot(remaining[0]);
 });
+
+// Recreate tabs (server-side) for any bot we've saved locally that the server
+// doesn't currently know about (e.g. after a `node server.js` restart).
+function replayMissingSavedBots(liveLabels) {
+    const profiles = loadProfiles();
+    Object.entries(profiles).forEach(([localId, profile]) => {
+        if (!liveLabels.includes(profile.label)) {
+            pendingCreateQueue.push({ localId, label: profile.label, authType: profile.authType || 'offline' });
+            socket.emit('create_bot', { label: profile.label, authType: profile.authType || 'offline', localId });
+        }
+    });
+}
+// Fallback: if the server never emits bot_list (e.g. it's not implemented),
+// still restore saved bots after a short delay.
+setTimeout(() => { if (!liveListReceived) replayMissingSavedBots([]); }, 800);
 
 const subscribedIds = new Set();
 function subscribeToBot(id) {
@@ -567,22 +695,50 @@ function subscribeToBot(id) {
     });
 }
 
+document.getElementById('btn-menu-toggle')?.addEventListener('click', () => setSidebarOpen(!document.getElementById('sidebar')?.classList.contains('open')));
+document.getElementById('sidebar-scrim')?.addEventListener('click', () => setSidebarOpen(false));
+
 document.getElementById('btn-add-bot').addEventListener('click',   () => document.getElementById('modal-overlay').classList.remove('hidden'));
 document.getElementById('modal-cancel').addEventListener('click',   () => document.getElementById('modal-overlay').classList.add('hidden'));
 document.getElementById('modal-confirm').addEventListener('click',  () => {
-    const label    = document.getElementById('modal-label').value.trim() || 'New Bot';
+    let label     = document.getElementById('modal-label').value.trim() || 'New Bot';
     const authType = document.getElementById('modal-auth').value;
-    socket.emit('create_bot', { label, authType });
+
+    // Guarantee a unique label so it's easy to tell bots apart in the sidebar
+    // (saved profiles are keyed by a hidden localId either way, but duplicate
+    // names are confusing to look at).
+    const existingLabels = Object.values(botData).map(b => b.label);
+    if (existingLabels.includes(label)) {
+        let n = 2;
+        while (existingLabels.includes(`${label} (${n})`)) n++;
+        label = `${label} (${n})`;
+    }
+
+    const localId = generateLocalId();
+    pendingCreateQueue.push({ localId, label, authType });
+
+    // Save a stub profile immediately so it survives even if bot_added never
+    // comes back (e.g. server offline) or the user never edits a field.
+    const profiles = loadProfiles();
+    profiles[localId] = {
+        label, authType, module: 'none',
+        host: 'mcsmp.gg', username: 'dominance1', password: '', version: '1.20.1',
+        moduleConfig: {}
+    };
+    saveProfiles(profiles);
+
+    socket.emit('create_bot', { label, authType, localId });
     document.getElementById('modal-overlay').classList.add('hidden');
     document.getElementById('modal-label').value = '';
 });
 
-socket.on('bot_added', ({ id }) => subscribeToBot(id));
 socket.on('bot_list',  (list)  => list.forEach(b => subscribeToBot(b.id)));
 
 document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-wrapper'))
         document.querySelectorAll('.custom-dropdown').forEach(d => d.style.display = 'none');
+    if (!e.target.closest('#sidebar') && !e.target.closest('#btn-menu-toggle'))
+        setSidebarOpen(false);
 });
 </script>
 </body>

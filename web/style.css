@@ -1,12 +1,15 @@
 /* ── Reset & Base ────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html { -webkit-text-size-adjust: 100%; }
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: #121212;
     color: #e0e0e0;
     display: flex;
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
 }
 
@@ -58,6 +61,7 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: 8px 0;
+    -webkit-overflow-scrolling: touch;
 }
 
 .bot-tab {
@@ -91,7 +95,7 @@ body {
     color: #555;
     font-size: 12px;
     cursor: pointer;
-    padding: 2px 4px;
+    padding: 6px 8px;
     border-radius: 3px;
     line-height: 1;
     transition: color 0.2s, background 0.2s;
@@ -104,10 +108,39 @@ body {
     min-width: 8px;
 }
 
+/* ── Mobile hamburger toggle (hidden on desktop) ────────────────────────── */
+#btn-menu-toggle {
+    display: none;
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 10001;
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: #1a1a1a;
+    color: #00ff00;
+    border: 1px solid #333;
+    font-size: 18px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+}
+
+#sidebar-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 9998;
+}
+#sidebar-scrim.visible { display: block; }
+
 /* ── Main Content ─────────────────────────────────────────────────────────── */
 #main {
     flex: 1;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 16px;
 }
 
@@ -131,8 +164,9 @@ body {
     align-items: center;
     gap: 12px;
     margin-bottom: 16px;
+    flex-wrap: wrap;
 }
-.panel-header h2 { font-size: 20px; font-weight: 600; }
+.panel-header h2 { font-size: 20px; font-weight: 600; word-break: break-word; }
 
 .auth-badge {
     font-size: 10px;
@@ -140,6 +174,7 @@ body {
     padding: 3px 8px;
     border-radius: 3px;
     font-weight: 700;
+    white-space: nowrap;
 }
 .auth-offline  { background: #2a2a2a; color: #888; border: 1px solid #444; }
 .auth-microsoft { background: #0d2a47; color: #60b0ff; border: 1px solid #1565c0; }
@@ -181,16 +216,16 @@ input, select {
     border-radius: 4px;
     outline: none;
     transition: border-color 0.2s;
-    height: 38px;
-    font-size: 13px;
+    height: 40px;
+    /* 16px minimum prevents iOS Safari from auto-zooming on focus */
+    font-size: 16px;
 }
 
 .input-group input { flex: 1; min-width: 120px; }
 input:focus { border-color: #00ff00; }
 
 /* Version select */
-#version_\* { min-width: 90px; }
-select[id^="version_"] { min-width: 90px; flex: 0; }
+select[id^="version_"] { min-width: 90px; flex: 0 0 auto; }
 
 /* ── Commands Select ──────────────────────────────────────────────────────── */
 select[id^="commands_"] {
@@ -239,24 +274,25 @@ input[id^="player-search_"] {
 }
 
 .dropdown-item {
-    padding: 10px 12px;
+    padding: 12px 12px;
     color: #e0e0e0;
     cursor: pointer;
     font-family: monospace;
     font-size: 13px;
     border-bottom: 1px solid #222;
 }
-.dropdown-item:hover { background: #00ff00; color: #000; }
+.dropdown-item:hover, .dropdown-item:active { background: #00ff00; color: #000; }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
 button {
-    padding: 8px 18px;
+    padding: 10px 18px;
     border-radius: 4px;
     border: none;
     cursor: pointer;
     font-weight: bold;
     font-size: 13px;
     transition: opacity 0.2s, transform 0.1s;
+    min-height: 40px;
 }
 button:active { transform: scale(0.97); }
 
@@ -264,10 +300,11 @@ button:active { transform: scale(0.97); }
     display: flex;
     gap: 8px;
     margin-top: 8px;
+    flex-wrap: wrap;
 }
 
-.btn-launch     { background: #2e7d32; color: white; flex: 1; }
-.btn-disconnect { background: #c62828; color: white; flex: 1; }
+.btn-launch     { background: #2e7d32; color: white; flex: 1; min-width: 100px; }
+.btn-disconnect { background: #c62828; color: white; flex: 1; min-width: 100px; }
 .btn-send       { background: #1565c0; color: white; }
 
 .admin .btn-send {
@@ -311,6 +348,7 @@ button:active { transform: scale(0.97); }
     font-size: 13px;
     line-height: 1.5;
     border-radius: 4px;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* ── Status Bar ───────────────────────────────────────────────────────────── */
@@ -354,6 +392,7 @@ button:active { transform: scale(0.97); }
     align-items: center;
     justify-content: center;
     z-index: 10000;
+    padding: 16px;
 }
 #modal-overlay.hidden { display: none; }
 
@@ -363,6 +402,7 @@ button:active { transform: scale(0.97); }
     border-radius: 10px;
     padding: 28px;
     width: 340px;
+    max-width: 100%;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -388,10 +428,68 @@ input[id^="time_"]    { flex: 1; min-width: 70px; }
 input[id^="reason_"]  { flex: 3; min-width: 130px; }
 input[id^="offense_"] { flex: 1; min-width: 70px; }
 
-/* ── Mobile ───────────────────────────────────────────────────────────────── */
-@media (max-width: 600px) {
-    #sidebar { width: 140px; min-width: 140px; }
-    .tab-label { font-size: 12px; }
-    .panel-header h2 { font-size: 16px; }
-    .console { height: 240px; }
+/* ── Module grids: default (desktop) already 2-col via inline module CSS ──── */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE LAYOUT
+   Sidebar becomes an off-canvas drawer opened by a hamburger button.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 760px) {
+    body { flex-direction: column; }
+
+    #btn-menu-toggle { display: flex; }
+
+    #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 78vw;
+        max-width: 300px;
+        min-width: 0;
+        z-index: 9999;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+        box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+    }
+    #sidebar.open { transform: translateX(0); }
+
+    #sidebar-header { padding-left: 60px; } /* clear space for the hamburger */
+
+    .bot-tab { padding: 14px 12px; } /* bigger touch targets */
+    .tab-remove { padding: 8px 10px; font-size: 14px; }
+
+    #main { padding: 12px; padding-top: 64px; }
+
+    .panel-header h2 { font-size: 17px; }
+
+    .card, .admin, .OnlinePlayers, .module-card { padding: 12px; }
+
+    /* Stack the server/username/version row */
+    .input-group input,
+    .input-group select { min-width: 0; flex: 1 1 100%; }
+    select[id^="version_"] { flex: 1 1 100%; }
+
+    .button-group { flex-direction: column; }
+    .btn-launch, .btn-disconnect { width: 100%; }
+
+    /* Admin row: stack into two-per-line instead of one long strip */
+    .admin .input-group select[id^="commands_"] { flex: 1 1 100%; }
+    .search-wrapper { flex: 1 1 100%; }
+    input[id^="time_"], input[id^="reason_"], input[id^="offense_"] { flex: 1 1 30%; min-width: 0; }
+
+    .coords-row { flex-direction: column; }
+    .elytra-grid, .zigzag-grid { grid-template-columns: 1fr; }
+    .elytra-field[style*="grid-column"] { grid-column: auto; }
+
+    .module-tabs { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    .module-btn { white-space: nowrap; flex: 0 0 auto; }
+
+    .console { height: 220px; }
+
+    #modal { width: 100%; }
+}
+
+@media (max-width: 400px) {
+    #sidebar { width: 85vw; }
 }
