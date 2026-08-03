@@ -175,8 +175,17 @@ io.on('connection', (socket) => {
     socket.on('remove_bot', ({ id }) => {
         const entry = bots[id];
         if (!entry) return;
+
         if (entry.spawnTimer) clearTimeout(entry.spawnTimer);
-        if (entry.bot) entry.bot.quit();
+
+        if (entry.bot) {
+            if (typeof entry.bot.quit === 'function') {
+                entry.bot.quit();
+            } else if (typeof entry.bot.end === 'function') {
+                entry.bot.end();
+            }
+        }
+
         delete bots[id];
         io.emit('bot_removed', { id });
     });
@@ -184,7 +193,13 @@ io.on('connection', (socket) => {
 
 function spawnBot(id, botOptions, data, socket) {
     const entry = bots[id];
+    if (!entry) return; // Guard clause in case it was already deleted
+
     const bot = mineflayer.createBot(botOptions);
+    if (!bots[id]) {
+        bot.quit();
+        return;
+    }
     entry.bot = bot;
     entry.moduleStarted = false;
     setupBotEvents(id, socket);
@@ -194,9 +209,14 @@ function spawnBot(id, botOptions, data, socket) {
     bot.once('login', () => {
         console.log(`[BOT][${id}] Login`);
         emitStatus(id, 'World Loaded...');
-        entry.spawnTimer = setTimeout(() => {
+        
+        if (!bots[id]) return;
+
+        bots[id].spawnTimer = setTimeout(() => {
+            if (!bots[id]) return;
             if (data.password) bot.chat(`/login ${data.password}`);
             setTimeout(() => {
+                if (!bots[id]) return;
                 bot.physics.enabled = true;
                 emitStatus(id, 'Active (Physics ON)');
             }, 3000);
